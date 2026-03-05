@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hermes Plays Pokémon</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-title">
+            <pre class="ascii-title">
+ ╦ ╦╔═╗╦═╗╔╦╗╔═╗╔═╗  ╔═╗╦  ╔═╗╦ ╦╔═╗
+ ╠═╣║╣ ╠╦╝║║║║╣ ╚═╗  ╠═╝║  ╠═╣╚╦╝╚═╗
+ ╩ ╩╚═╝╩╚═╩ ╩╚═╝╚═╝  ╩  ╩═╝╩ ╩ ╩ ╚═╝
+        ╔═╗╔═╗╦╔═╔═╗╔╦╗╔═╗╔╗╔
+        ╠═╝║ ║╠╩╗║╣ ║║║║ ║║║║
+        ╩  ╚═╝╩ ╩╚═╝╩ ╩╚═╝╝╚╝</pre>
+        </div>
+        <div class="header-status">
+            <span class="status-dot" id="statusDot"></span>
+            <span class="status-text" id="statusText">Connecting...</span>
+        </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <main class="main-grid">
+        <!-- Left Panel: AI Log -->
+        <section class="panel log-panel">
+            <div class="panel-header">
+                <span class="panel-icon">🧠</span>
+                <span class="panel-title">AI Thought Process & Action Log</span>
+                <button class="btn-clear" id="btnClearLog" title="Clear log">✕</button>
+            </div>
+            <div class="log-container" id="logContainer">
+                <div class="log-entry log-status">
+                    <span class="log-time">--:--:--</span>
+                    <span class="log-text">Dashboard initializing...</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Panel: Game View -->
+        <section class="panel game-panel">
+            <div class="panel-header">
+                <span class="panel-icon">🎮</span>
+                <span class="panel-title">Game Screen</span>
+                <span class="panel-meta" id="frameCount"></span>
+            </div>
+
+            <!-- Game Screen with corner brackets -->
+            <div class="game-screen-wrapper">
+                <div class="game-screen-frame">
+                    <img id="gameScreen" class="game-screen" alt="Game Screen"
+                         src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPj/HwADBwIAMCbHYQAAAABJRU5ErkJggg==">
+                    <div class="game-screen-overlay" id="screenOverlay">
+                        <span class="overlay-text">Waiting for game...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <span class="stat-label">Badges</span>
+                    <div class="badges-row" id="badgesRow">
+                        <span class="badge-circle empty" title="Boulder">○</span>
+                        <span class="badge-circle empty" title="Cascade">○</span>
+                        <span class="badge-circle empty" title="Thunder">○</span>
+                        <span class="badge-circle empty" title="Rainbow">○</span>
+                        <span class="badge-circle empty" title="Soul">○</span>
+                        <span class="badge-circle empty" title="Marsh">○</span>
+                        <span class="badge-circle empty" title="Volcano">○</span>
+                        <span class="badge-circle empty" title="Earth">○</span>
+                    </div>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Map</span>
+                    <span class="stat-value" id="statMap">---</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Position</span>
+                    <span class="stat-value" id="statPosition">(--, --)</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Money</span>
+                    <span class="stat-value stat-money" id="statMoney">$---</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Play Time</span>
+                    <span class="stat-value" id="statPlayTime">--:--:--</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Turns</span>
+                    <span class="stat-value" id="statTurns">0</span>
+                </div>
+            </div>
+
+            <!-- Battle Info (hidden when not in battle) -->
+            <div class="battle-info hidden" id="battleInfo">
+                <div class="panel-header">
+                    <span class="panel-icon">⚔️</span>
+                    <span class="panel-title">Battle</span>
+                </div>
+                <div class="battle-content" id="battleContent"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Bottom Panel: Team -->
+    <section class="panel team-panel">
+        <div class="panel-header">
+            <span class="panel-icon">⚡</span>
+            <span class="panel-title">Current Team</span>
+        </div>
+        <div class="team-container" id="teamContainer">
+            <!-- Empty team slots -->
+            <div class="team-card empty-card">
+                <div class="team-name">Empty</div>
+                <div class="empty-pokeball">○</div>
+            </div>
+            <div class="team-card empty-card">
+                <div class="team-name">Empty</div>
+                <div class="empty-pokeball">○</div>
+            </div>
+            <div class="team-card empty-card">
+                <div class="team-name">Empty</div>
+                <div class="empty-pokeball">○</div>
+            </div>
+            <div class="team-card empty-card">
+                <div class="team-name">Empty</div>
+                <div class="empty-pokeball">○</div>
+            </div>
+            <div class="team-card empty-card">
+                <div class="team-name">Empty</div>
+                <div class="empty-pokeball">○</div>
+            </div>
+            <div class="team-card empty-card">
+                <div class="team-name">Empty</div>
+                <div class="empty-pokeball">○</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dialog overlay (shown when dialog is active) -->
+    <div class="dialog-overlay hidden" id="dialogOverlay">
+        <div class="dialog-box">
+            <span class="dialog-text" id="dialogText"></span>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

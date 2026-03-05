@@ -1,0 +1,655 @@
+/* ============================================
+   Hermes Plays Pokémon — Dashboard Stylesheet
+   Dark cyberpunk command center theme
+   ============================================ */
+
+/* CSS Custom Properties */
+:root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #1c2128;
+    --bg-panel: #161b22;
+    --border: #30363d;
+    --border-accent: #58a6ff;
+
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --text-bright: #ffffff;
+
+    --accent: #58a6ff;
+    --accent-amber: #f0883e;
+    --accent-green: #7ee787;
+    --accent-red: #f85149;
+    --accent-purple: #bc8cff;
+
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', monospace;
+    --font-pixel: 'Press Start 2P', var(--font-mono);
+
+    /* Type colors */
+    --type-normal: #A8A878;
+    --type-fire: #F08030;
+    --type-water: #6890F0;
+    --type-grass: #78C850;
+    --type-electric: #F8D030;
+    --type-ice: #98D8D8;
+    --type-fighting: #C03028;
+    --type-poison: #A040A0;
+    --type-ground: #E0C068;
+    --type-flying: #A890F0;
+    --type-psychic: #F85888;
+    --type-bug: #A8B820;
+    --type-rock: #B8A038;
+    --type-ghost: #705898;
+    --type-dragon: #7038F8;
+    --type-dark: #705848;
+    --type-steel: #B8B8D0;
+    --type-fairy: #EE99AC;
+}
+
+/* Reset & Base */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    background-color: var(--bg-primary);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header */
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 20px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    min-height: 48px;
+    flex-shrink: 0;
+}
+
+.header-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.ascii-title {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    line-height: 1.15;
+    color: var(--accent);
+    text-shadow: 0 0 10px rgba(88, 166, 255, 0.4);
+    white-space: pre;
+    user-select: none;
+}
+
+.header-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-red);
+    display: inline-block;
+    transition: background 0.3s;
+}
+
+.status-dot.connected {
+    background: var(--accent-green);
+    box-shadow: 0 0 6px rgba(126, 231, 135, 0.6);
+}
+
+.status-text {
+    color: var(--text-dim);
+}
+
+/* Main Grid */
+.main-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Panels */
+.panel {
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    flex-shrink: 0;
+}
+
+.panel-icon {
+    font-size: 14px;
+}
+
+.panel-title {
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.panel-meta {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-dim);
+}
+
+.btn-clear {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+
+.btn-clear:hover {
+    color: var(--accent-red);
+    border-color: var(--accent-red);
+}
+
+/* Log Panel */
+.log-panel {
+    border-right: none;
+}
+
+.log-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    scroll-behavior: smooth;
+}
+
+.log-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.log-container::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+}
+
+.log-container::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+.log-entry {
+    display: flex;
+    gap: 8px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    animation: fadeIn 0.3s ease-in;
+    font-size: 12px;
+    word-break: break-word;
+}
+
+.log-entry:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.log-time {
+    color: var(--text-dim);
+    font-size: 11px;
+    flex-shrink: 0;
+    min-width: 60px;
+}
+
+.log-text {
+    flex: 1;
+}
+
+.log-system .log-text { color: var(--accent-amber); }
+.log-thinking .log-text { color: var(--text); opacity: 0.85; font-style: italic; }
+.log-action .log-text { color: var(--accent-green); }
+.log-error .log-text { color: var(--accent-red); }
+.log-status .log-text { color: var(--accent); }
+.log-key-moment .log-text { color: var(--accent-purple); font-weight: 600; }
+
+/* Game Panel */
+.game-panel {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.game-panel::-webkit-scrollbar {
+    width: 6px;
+}
+
+.game-panel::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+}
+
+.game-panel::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+/* Game Screen */
+.game-screen-wrapper {
+    display: flex;
+    justify-content: center;
+    padding: 12px;
+    flex-shrink: 0;
+}
+
+.game-screen-frame {
+    position: relative;
+    display: inline-block;
+    padding: 4px;
+}
+
+/* Corner bracket decorations */
+.game-screen-frame::before,
+.game-screen-frame::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-color: var(--accent);
+    border-style: solid;
+    border-width: 0;
+}
+
+.game-screen-frame::before {
+    top: 0;
+    left: 0;
+    border-top-width: 2px;
+    border-left-width: 2px;
+}
+
+.game-screen-frame::after {
+    top: 0;
+    right: 0;
+    border-top-width: 2px;
+    border-right-width: 2px;
+}
+
+/* Bottom corners via wrapper pseudo-elements */
+.game-screen-wrapper::before,
+.game-screen-wrapper::after {
+    content: none;
+}
+
+.game-screen-frame > .game-screen {
+    border: none;
+}
+
+.game-screen {
+    display: block;
+    width: 320px;
+    height: 288px;
+    image-rendering: pixelated;
+    background: #000;
+    border: 1px solid var(--border);
+}
+
+.game-screen-overlay {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.7);
+    pointer-events: none;
+}
+
+.game-screen-overlay.hidden {
+    display: none;
+}
+
+.overlay-text {
+    color: var(--accent);
+    font-size: 14px;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.stat-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-value {
+    font-size: 13px;
+    color: var(--text-bright);
+}
+
+.stat-money {
+    color: var(--accent-green);
+}
+
+/* Badges Row */
+.badges-row {
+    display: flex;
+    gap: 4px;
+    font-size: 14px;
+}
+
+.badge-circle {
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: var(--text-dim);
+    transition: all 0.3s;
+}
+
+.badge-circle.earned {
+    color: var(--accent);
+    text-shadow: 0 0 8px rgba(88, 166, 255, 0.6);
+}
+
+/* Battle Info */
+.battle-info {
+    border-top: 1px solid var(--accent-red);
+    padding: 10px 12px;
+    background: rgba(248, 81, 73, 0.05);
+    flex-shrink: 0;
+}
+
+.battle-content {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding-top: 6px;
+    font-size: 12px;
+}
+
+/* Team Panel */
+.team-panel {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+}
+
+.team-container {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+}
+
+.team-card {
+    flex: 0 0 150px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: border-color 0.2s;
+}
+
+.team-card:hover {
+    border-color: var(--accent);
+}
+
+.team-card.empty-card {
+    border-style: dashed;
+    opacity: 0.4;
+    align-items: center;
+    justify-content: center;
+    min-height: 90px;
+}
+
+.empty-pokeball {
+    font-size: 24px;
+    color: var(--text-dim);
+}
+
+.team-name {
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--text-bright);
+}
+
+.team-level {
+    font-size: 11px;
+    color: var(--text-dim);
+}
+
+.team-types {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.type-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #fff;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.4);
+}
+
+/* HP Bar */
+.hp-bar-container {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.hp-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.hp-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease, background 0.5s ease;
+}
+
+.hp-bar-fill.hp-high { background: var(--accent-green); }
+.hp-bar-fill.hp-mid { background: #f0c040; }
+.hp-bar-fill.hp-low { background: var(--accent-red); }
+
+.hp-text {
+    font-size: 10px;
+    color: var(--text-dim);
+    min-width: 48px;
+    text-align: right;
+}
+
+/* Dialog Overlay */
+.dialog-overlay {
+    position: fixed;
+    bottom: 180px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+}
+
+.dialog-box {
+    background: var(--bg-secondary);
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    padding: 12px 20px;
+    max-width: 500px;
+    font-size: 14px;
+    color: var(--text-bright);
+    box-shadow: 0 0 20px rgba(88, 166, 255, 0.2);
+}
+
+/* Hidden utility */
+.hidden {
+    display: none !important;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .main-grid {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr 1fr;
+    }
+
+    .log-panel {
+        border-right: 1px solid var(--border);
+        max-height: 40vh;
+    }
+
+    .game-screen {
+        width: 240px;
+        height: 216px;
+    }
+
+    .ascii-title {
+        font-size: 6px;
+    }
+
+    .team-container {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+
+    .team-card {
+        flex: 0 0 130px;
+    }
+}
+
+@media (max-width: 600px) {
+    .header {
+        flex-direction: column;
+        gap: 4px;
+        padding: 6px 12px;
+    }
+
+    .ascii-title {
+        font-size: 5px;
+    }
+
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .game-screen {
+        width: 200px;
+        height: 180px;
+    }
+}
+
+/* Bottom corner brackets for game frame (using extra elements in JS) */
+.corner-bl, .corner-br {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-color: var(--accent);
+    border-style: solid;
+    border-width: 0;
+}
+
+.corner-bl {
+    bottom: 0;
+    left: 0;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+}
+
+.corner-br {
+    bottom: 0;
+    right: 0;
+    border-bottom-width: 2px;
+    border-right-width: 2px;
+}
+
+/* Team status conditions */
+.status-condition {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: var(--accent-red);
+    color: #fff;
+}
+
+.status-condition.slp { background: #9c9c9c; }
+.status-condition.psn { background: #a040a0; }
+.status-condition.brn { background: #f08030; }
+.status-condition.frz { background: #98d8d8; color: #333; }
+.status-condition.par { background: #f8d030; color: #333; }
+
+/* Moves list in team card */
+.team-moves {
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.4;
+}
