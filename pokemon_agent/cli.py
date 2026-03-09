@@ -61,6 +61,7 @@ def cmd_serve(args):
         game_type=game_type,
         port=args.port,
         data_dir=str(data_dir),
+        load_state=getattr(args, 'load_state', None),
     ))
 
     import uvicorn
@@ -112,6 +113,10 @@ def main():
     serve_p.add_argument(
         "--no-dashboard", action="store_true",
         help="Disable dashboard mounting",
+    )
+    serve_p.add_argument(
+        "--load-state", default=None,
+        help="Name of a saved state to auto-load on startup (e.g. 'intro_complete')",
     )
 
     # --- info ---

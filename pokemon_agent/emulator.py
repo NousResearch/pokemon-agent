@@ -156,13 +156,18 @@ class PyBoyEmulator(Emulator):
     # -- input --------------------------------------------------------------
 
     def press(self, button: str, frames: int = 1) -> None:
-        """Press a button and advance *frames* frames."""
+        """Press a button and hold it for *frames* frames, then release.
+
+        Uses button_press/button_release (not button()) to ensure the
+        button stays held for the full duration. PyBoy's button() auto-
+        releases after ``delay`` ticks which can cause issues with Gen 1
+        walk registration that needs multi-frame holds.
+        """
         button = button.lower()
         if button not in self.BUTTONS:
             raise ValueError(f"Unknown button '{button}'. Valid: {self.BUTTONS}")
         pb = self._pyboy
-        # PyBoy accepts button(name) to press then tick to advance
-        pb.button(button)  # type: ignore[union-attr]
+        pb.button_press(button)  # type: ignore[union-attr]
         self.tick(frames)
         pb.button_release(button)  # type: ignore[union-attr]
 

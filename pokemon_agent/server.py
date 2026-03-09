@@ -32,6 +32,7 @@ class GameConfig(BaseModel):
     game_type: str = "auto"       # "red", "firered", or "auto"
     port: int = 8765
     data_dir: str = "~/.pokemon-agent"
+    load_state: Optional[str] = None  # Save-state name to auto-load on startup
 
 
 class ActionRequest(BaseModel):
@@ -178,23 +179,29 @@ async def _execute_action(action_str: str) -> None:
 
     if parts[0] == "press" and len(parts) >= 2:
         button = "_".join(parts[1:])
-        await _run_sync(_emulator.press, button)
-        await _run_sync(_emulator.tick, 10)
-        await _run_sync(_emulator.tick, 20)
+        # Hold button for 8 frames so the game registers the press,
+        # then wait 12 frames for the game to process it.
+        await _run_sync(_emulator.press, button, 8)
+        await _run_sync(_emulator.tick, 12)
         return
 
     if parts[0] == "walk" and len(parts) >= 2:
         direction = parts[1]
-        await _run_sync(_emulator.press, direction)
-        await _run_sync(_emulator.tick, 16)
-        await _run_sync(_emulator.tick, 8)
+        # Gen 1 movement timing (empirically tested):
+        #   - Button must be held >= 4 frames for the game's vblank joypad
+        #     poll to register the input reliably.
+        #   - wWalkCounter starts at 8, decrements each frame (2 px/frame
+        #     = 16 px = 1 tile). Total walk animation = ~16 frames.
+        #   - Minimum total frames for a confirmed tile move = 17.
+        #   - We use hold=8 + wait=12 = 20 total for a safety margin.
+        await _run_sync(_emulator.press, direction, 8)
+        await _run_sync(_emulator.tick, 12)
         return
 
     if parts[0] == "hold" and len(parts) >= 3:
         button = "_".join(parts[1:-1])
         frames = int(parts[-1])
-        await _run_sync(_emulator.press, button)
-        await _run_sync(_emulator.tick, frames)
+        await _run_sync(_emulator.press, button, frames)
         return
 
     if parts[0] == "wait" and len(parts) == 2:
@@ -271,6 +278,19 @@ async def _startup():
     except ImportError:
         print("[server] Dashboard not installed — /dashboard unavailable")
         print("[server]   Install with: pip install pokemon-agent[dashboard]")
+
+    # Auto-load a save state if specified
+    if _config.load_state:
+        saves_dir = data_dir / "saves"
+        state_path = saves_dir / f"{_config.load_state}.state"
+        if state_path.exists():
+            try:
+                _emulator.load_state(str(state_path))
+                print(f"[server] Loaded save state: {_config.load_state}")
+            except Exception as e:
+                print(f"[server] WARNING: Failed to load state '{_config.load_state}': {e}")
+        else:
+            print(f"[server] WARNING: Save state not found: {state_path}")
 
     print(f"[server] Ready — listening on port {_config.port}")
     print(f"[server] Endpoints:")
@@ -443,10 +463,12 @@ async def minimap():
     _ensure_emulator()
     try:
         state = await _run_sync(_get_state_dict)
+        map_info = state.get("map", {})
         player = state.get("player", {})
-        map_name = player.get("map_name", "Unknown")
-        x = player.get("x", "?")
-        y = player.get("y", "?")
+        map_name = map_info.get("map_name", "Unknown")
+        pos = player.get("position", {})
+        x = pos.get("x", "?")
+        y = pos.get("y", "?")
 
         lines = [
             f"=== {map_name} ===",

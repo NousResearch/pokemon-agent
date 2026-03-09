@@ -31,7 +31,9 @@ ADDR_MAP_ID        = 0xD35E   # current map number (wCurMap)
 ADDR_MAP_Y         = 0xD361   # player Y on map  (wYCoord)
 ADDR_MAP_X         = 0xD362   # player X on map  (wXCoord)
 ADDR_MAP_BANK      = 0xD35E   # same byte is map id
-ADDR_FACING        = 0xD367   # sprite facing   (wPlayerDirection: 0=down,4=up,8=left,0xC=right)
+ADDR_FACING        = 0xC109   # sprite facing   (wSpritePlayerStateData1FacingDirection: 0=down,4=up,8=left,0xC=right)
+# Note: 0xD367 (wPlayerDirection) retains the direction from map entry; 
+# 0xC109 is the live sprite state that updates as the player moves.
 
 # -- Party --
 ADDR_PARTY_COUNT   = 0xD163
@@ -682,14 +684,24 @@ class RedBlueMemoryReader(GameMemoryReader):
         return result
 
     def read_dialog(self) -> Dict[str, Any]:
-        """Read dialogue / text box state."""
+        """Read dialogue / text box state.
+
+        Uses wJoyIgnore as the primary indicator — bit 5 is set by the
+        game engine when joypad input is disabled (during text scroll,
+        NPC dialog, etc.).  wTextBoxID is unreliable because it can
+        retain stale non-zero values after dialog ends (e.g. after
+        Oak's intro sequence).
+        """
         text_box = self.emu.read_u8(ADDR_TEXT_BOX_ID)
         joy_ignore = self.emu.read_u8(ADDR_JOY_IGNORE)
-        # bit 5 of wJoyIgnore is set during text scroll
-        in_dialog = bool(joy_ignore & 0x20) or text_box != 0
+        # Only use wJoyIgnore for the "active" flag — it's the game
+        # engine's actual input-lock signal. wTextBoxID is kept for
+        # informational purposes but not used for the active check.
+        in_dialog = bool(joy_ignore & 0x20)
         return {
             "active": in_dialog,
             "text_box_id": text_box,
+            "joy_ignore": joy_ignore,
         }
 
     def read_map_info(self) -> Dict[str, Any]:
@@ -726,3 +738,7 @@ class RedBlueMemoryReader(GameMemoryReader):
             "badges": gym_leaders_defeated,
             "badge_count": len(gym_leaders_defeated),
         }
+
+
+# Alias used by server.py and README examples
+PokemonRedReader = RedBlueMemoryReader
