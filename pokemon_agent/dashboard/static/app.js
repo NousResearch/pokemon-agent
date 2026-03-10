@@ -116,41 +116,46 @@
     function renderLog(event) {
         if (!event) return;
         var type = event.type || 'status';
-        var data = event.data || {};
+        // Server broadcasts fields at top level (not nested under .data),
+        // but some event formats use .data — check both.
+        var data = event.data || event;
 
         switch (type) {
             case 'action':
-                var actionText = data.action || (data.actions ? data.actions.join(', ') : JSON.stringify(data));
-                addLog('action', '▶ Action: ' + actionText);
+                var actions = data.actions || event.actions || [];
+                var actionText = Array.isArray(actions) && actions.length
+                    ? actions.join(', ')
+                    : (data.action || '(unknown)');
+                addLog('action', '▶ ' + actionText);
                 turnCount++;
                 statTurns.textContent = turnCount;
                 break;
             case 'reasoning':
-                addLog('thinking', '<thinking>' + (data.text || '') + '</thinking>');
+                addLog('thinking', '💭 ' + (data.text || event.text || ''));
                 break;
             case 'tool_call':
-                addLog('system', '⚙ Tool: ' + (data.tool || data.name || '') + (data.args ? ' → ' + JSON.stringify(data.args) : ''));
+                addLog('system', '⚙ ' + (data.tool || data.name || event.tool || '') + (data.args ? ' → ' + JSON.stringify(data.args) : ''));
                 break;
             case 'tool_result':
-                addLog('system', '← Result: ' + truncate(data.result || JSON.stringify(data), 200));
+                addLog('system', '← ' + truncate(data.result || event.result || JSON.stringify(data), 200));
                 break;
             case 'error':
-                addLog('error', '✕ Error: ' + (data.message || data.error || JSON.stringify(data)));
+                addLog('error', '✕ ' + (data.message || data.error || event.error || JSON.stringify(data)));
                 break;
             case 'key_moment':
-                addLog('key-moment', '★ ' + (data.description || JSON.stringify(data)));
+                addLog('key-moment', '★ ' + (data.description || event.description || JSON.stringify(data)));
                 break;
             case 'battle':
-                addLog('action', '⚔ Battle vs ' + (data.opponent || '???') + ': ' + (data.result || ''));
+                addLog('action', '⚔ Battle vs ' + (data.opponent || event.opponent || '???') + ': ' + (data.result || event.result || ''));
                 break;
             case 'state_update':
-                // silent - handled by renderState
+                // silent - handled by renderStats
                 break;
             case 'screenshot':
                 // silent - handled by renderGameScreen
                 break;
             default:
-                addLog('status', (data.message || data.text || JSON.stringify(event)));
+                addLog('status', (data.message || data.text || event.message || event.text || JSON.stringify(event)));
                 break;
         }
     }
