@@ -120,7 +120,8 @@
 
         switch (type) {
             case 'action':
-                addLog('action', '▶ Action: ' + (data.action || JSON.stringify(data)));
+                var actionText = data.action || (data.actions ? data.actions.join(', ') : JSON.stringify(data));
+                addLog('action', '▶ Action: ' + actionText);
                 turnCount++;
                 statTurns.textContent = turnCount;
                 break;
@@ -173,13 +174,20 @@
     function renderStats(state) {
         if (!state) return;
         var player = state.player;
+        var mapInfo = state.map || {};
         if (player) {
             var pos = player.position || {};
-            statMap.textContent = pos.map_name || 'Unknown';
+            statMap.textContent = mapInfo.map_name || 'Unknown';
             statPosition.textContent = '(' + (pos.x != null ? pos.x : '--') + ', ' + (pos.y != null ? pos.y : '--') + ')';
             statMoney.textContent = '$' + (player.money != null ? player.money.toLocaleString() : '---');
-            statPlayTime.textContent = formatPlayTime(player.play_time);
-            renderBadges(player.badges, player.badges_list);
+            // play_time can be a string "H:MM:SS" or an object {hours, minutes, seconds}
+            var pt = player.play_time;
+            if (typeof pt === 'string') {
+                statPlayTime.textContent = pt;
+            } else {
+                statPlayTime.textContent = formatPlayTime(pt);
+            }
+            renderBadges(player.badge_count, player.badges);
         }
 
         // Dialog
@@ -436,11 +444,24 @@
     function handleWSMessage(msg) {
         var type = msg.type || msg.event;
 
-        if (type === 'state_update' && msg.data) {
-            var stateJSON = JSON.stringify(msg.data);
+        // Extract state from whichever field the server uses
+        var statePayload = msg.data || msg.state || msg.state_after || null;
+
+        if (type === 'action') {
+            // Action events: log the action and update state
+            renderLog(msg);
+            if (msg.state_after) {
+                var stateJSON = JSON.stringify(msg.state_after);
+                if (stateJSON !== lastStateJSON) {
+                    lastStateJSON = stateJSON;
+                    renderStats(msg.state_after);
+                }
+            }
+        } else if (type === 'state_update' && statePayload) {
+            var stateJSON = JSON.stringify(statePayload);
             if (stateJSON !== lastStateJSON) {
                 lastStateJSON = stateJSON;
-                renderStats(msg.data);
+                renderStats(statePayload);
             }
         } else if (type === 'screenshot' && msg.data && msg.data.image) {
             renderGameScreen(msg.data.image);

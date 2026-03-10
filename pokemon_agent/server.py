@@ -375,6 +375,13 @@ async def execute_actions(req: ActionRequest):
 
         state_after = await _run_sync(_get_state_dict)
 
+        # Grab a screenshot for the live dashboard
+        try:
+            png_bytes = await _run_sync(_get_screenshot_bytes)
+            screenshot_b64 = base64.b64encode(png_bytes).decode("ascii")
+        except Exception:
+            screenshot_b64 = None
+
         # Broadcast to WebSocket clients
         await broadcast({
             "type": "action",
@@ -382,6 +389,12 @@ async def execute_actions(req: ActionRequest):
             "actions_executed": executed,
             "state_after": state_after,
         })
+        # Also push the latest frame so the dashboard updates immediately
+        if screenshot_b64:
+            await broadcast({
+                "type": "screenshot",
+                "data": {"image": screenshot_b64, "format": "png"},
+            })
 
         return {
             "success": True,
@@ -515,16 +528,25 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 # ---------------------------------------------------------------------------
-# Dashboard fallback
+# Dashboard fallback — only registered if dashboard static files are missing
 # ---------------------------------------------------------------------------
 
-@app.get("/dashboard")
-@app.get("/dashboard/{path:path}")
-async def dashboard_fallback(path: str = ""):
-    """Fallback when dashboard extra is not installed."""
-    # If a real dashboard mount exists this route is shadowed, so this only
-    # fires when the dashboard module is missing.
-    raise HTTPException(
-        status_code=404,
-        detail="Dashboard not installed. Install with: pip install pokemon-agent[dashboard]",
-    )
+def _register_dashboard_fallback():
+    """Register a fallback route for /dashboard if static files aren't available."""
+    try:
+        import pokemon_agent.dashboard as _dm
+        static_dir = Path(_dm.__file__).parent / "static"
+        if static_dir.is_dir() and (static_dir / "index.html").exists():
+            return  # Dashboard exists — don't register fallback
+    except ImportError:
+        pass
+
+    @app.get("/dashboard")
+    @app.get("/dashboard/{path:path}")
+    async def dashboard_fallback(path: str = ""):
+        raise HTTPException(
+            status_code=404,
+            detail="Dashboard not installed. Install with: pip install pokemon-agent[dashboard]",
+        )
+
+_register_dashboard_fallback()
