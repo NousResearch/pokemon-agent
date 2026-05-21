@@ -29,6 +29,14 @@ def _detect_game_type(rom_path: str) -> str:
     if ext in (".gb", ".gbc"):
         return "red"
     elif ext == ".gba":
+        try:
+            with open(rom_path, "rb") as f:
+                f.seek(0xA0)
+                title = f.read(12).decode("ascii", errors="ignore").strip("\0 ")
+            if "EMER" in title.upper():
+                return "emerald"
+        except OSError:
+            pass
         return "firered"
     return "unknown"
 
@@ -44,7 +52,9 @@ def cmd_serve(args):
     data_dir.mkdir(parents=True, exist_ok=True)
     (data_dir / "saves").mkdir(exist_ok=True)
 
-    game_type = _detect_game_type(str(rom))
+    game_type = args.game_type
+    if game_type == "auto":
+        game_type = _detect_game_type(str(rom))
 
     print(BANNER.format(version=__version__))
     print(f"  ROM:       {rom}")
@@ -117,6 +127,12 @@ def main():
     serve_p.add_argument(
         "--load-state", default=None,
         help="Name of a saved state to auto-load on startup (e.g. 'intro_complete')",
+    )
+    serve_p.add_argument(
+        "--game-type",
+        choices=["auto", "red", "firered", "emerald"],
+        default="auto",
+        help="Memory reader to use (default: auto)",
     )
 
     # --- info ---

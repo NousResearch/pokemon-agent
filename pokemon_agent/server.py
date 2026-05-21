@@ -29,7 +29,7 @@ __version__ = "0.1.0"
 class GameConfig(BaseModel):
     """Server configuration — set before startup."""
     rom_path: str
-    game_type: str = "auto"       # "red", "firered", or "auto"
+    game_type: str = "auto"       # "red", "firered", "emerald", or "auto"
     port: int = 8765
     data_dir: str = "~/.pokemon-agent"
     load_state: Optional[str] = None  # Save-state name to auto-load on startup
@@ -83,11 +83,19 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 def _detect_game_type(rom_path: str) -> str:
-    """Pick reader type based on file extension."""
+    """Pick reader type based on file extension and, for GBA, the ROM title."""
     ext = Path(rom_path).suffix.lower()
     if ext in (".gb", ".gbc"):
         return "red"
     elif ext == ".gba":
+        try:
+            with open(rom_path, "rb") as f:
+                f.seek(0xA0)
+                title = f.read(12).decode("ascii", errors="ignore").strip("\0 ")
+            if "EMER" in title.upper():
+                return "emerald"
+        except OSError:
+            pass
         return "firered"
     raise ValueError(f"Unrecognised ROM extension: {ext}")
 
@@ -258,6 +266,9 @@ async def _startup():
     elif game_type == "firered":
         from pokemon_agent.memory.firered import PokemonFireRedReader
         _reader = PokemonFireRedReader(_emulator)
+    elif game_type == "emerald":
+        from pokemon_agent.memory.emerald import PokemonEmeraldReader
+        _reader = PokemonEmeraldReader(_emulator)
     else:
         raise ValueError(f"Unknown game type: {game_type}")
 

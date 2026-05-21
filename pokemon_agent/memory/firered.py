@@ -161,3 +161,6 @@ class FireRedMemoryReader(GameMemoryReader):
             "FireRedMemoryReader.read_flags() is not yet implemented. "
             "Planned for Phase 2."
         )
+
+
+PokemonFireRedReader = FireRedMemoryReader
