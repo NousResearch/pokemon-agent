@@ -7,6 +7,7 @@ from pokemon_agent.memory.emerald import (
     OFF_PARTY_COUNT,
     OFF_PARTY_DATA,
     PARTY_MON_SIZE,
+    SPECIES_NAMES,
     PokemonEmeraldReader,
 )
 from pokemon_agent.memory.firered import FireRedMemoryReader, PokemonFireRedReader
@@ -61,7 +62,7 @@ def test_emerald_party_decrypts_gen3_pokemon():
     key = personality ^ ot_id
 
     growth = bytearray(12)
-    growth[0:2] = (258).to_bytes(2, "little")  # Mudkip
+    growth[0:2] = (283).to_bytes(2, "little")  # SPECIES_MUDKIP in Emerald
     growth[2:4] = (0).to_bytes(2, "little")
     growth[4:8] = (1250).to_bytes(4, "little")
 
@@ -92,6 +93,16 @@ def test_emerald_party_decrypts_gen3_pokemon():
     assert party[0]["nickname"] == "MUDKIP"
     assert party[0]["level"] == 5
     assert [move["name"] for move in party[0]["moves"]] == ["Tackle", "Growl"]
+
+
+def test_emerald_species_names_cover_gen1_to_gen3_internal_ids():
+    assert SPECIES_NAMES[1] == "Bulbasaur"
+    assert SPECIES_NAMES[151] == "Mew"
+    assert SPECIES_NAMES[251] == "Celebi"
+    assert SPECIES_NAMES[277] == "Treecko"
+    assert SPECIES_NAMES[283] == "Mudkip"
+    assert SPECIES_NAMES[410] == "Deoxys"
+    assert SPECIES_NAMES[411] == "Chimecho"
 
 
 def test_gba_rom_header_detects_emerald(tmp_path: Path):
