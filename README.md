@@ -30,7 +30,7 @@ Let any AI agent — [Hermes Agent](https://github.com/NousResearch/hermes-agent
 - **📡 WebSocket** — Real-time event streaming for live monitoring.
 - **🧠 Structured game state** — RAM is parsed into clean JSON: party, bag, badges, map, battle, dialog.
 - **🎨 Live dashboard** — Optional web GUI to watch the AI play (Claude Plays Pokémon style).
-- **🎮 Multi-game** — Supports Game Boy (Pokémon Red/Blue) via PyBoy, GBA (FireRed) via PyGBA.
+- **🎮 Multi-game** — Supports Game Boy (Pokémon Red/Blue) via PyBoy, with GBA readers for FireRed and Emerald via PyGBA.
 - **🤖 Agent-agnostic** — Works with any AI agent, RL framework, or custom script.
 
 ## Quick Start
@@ -51,6 +51,13 @@ pip install pokemon-agent[dashboard] pyboy
 
 ```bash
 pokemon-agent serve --rom path/to/pokemon_red.gb
+```
+
+For Emerald, pass a `.gba` ROM. The CLI auto-detects English Emerald ROM
+headers, or you can select the reader explicitly:
+
+```bash
+pokemon-agent serve --rom path/to/pokemon_emerald.gba --game-type emerald
 ```
 
 ```

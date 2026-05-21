@@ -326,10 +326,21 @@ class PyGBAEmulator(Emulator):
     # -- save / load --------------------------------------------------------
 
     def save_state(self, path: str) -> None:
-        self._gba.save_state(path)  # type: ignore[union-attr]
+        path = str(Path(path).expanduser().resolve())
+        state = self._gba.core.save_raw_state()  # type: ignore[union-attr]
+        with open(path, "wb") as f:
+            f.write(bytes(state))
 
     def load_state(self, path: str) -> None:
-        self._gba.load_state(path)  # type: ignore[union-attr]
+        path = str(Path(path).expanduser().resolve())
+        with open(path, "rb") as f:
+            state = f.read()
+        loaded = self._gba.core.load_raw_state(state)  # type: ignore[union-attr]
+        if not loaded:
+            raise ValueError(
+                "Unable to load GBA save state. PyGBA expects a raw mGBA state "
+                "created by this backend for the same ROM and BIOS."
+            )
 
     # -- info ---------------------------------------------------------------
 
