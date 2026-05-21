@@ -4,6 +4,7 @@ from pokemon_agent.cli import _detect_game_type
 from pokemon_agent.emulator import PyGBAEmulator
 from pokemon_agent.memory.emerald import (
     ADDR_SAVEBLOCK1_PTR,
+    ITEM_NAMES,
     OFF_PARTY_COUNT,
     OFF_PARTY_DATA,
     PARTY_MON_SIZE,
@@ -103,6 +104,17 @@ def test_emerald_species_names_cover_gen1_to_gen3_internal_ids():
     assert SPECIES_NAMES[283] == "Mudkip"
     assert SPECIES_NAMES[410] == "Deoxys"
     assert SPECIES_NAMES[411] == "Chimecho"
+
+
+def test_emerald_item_names_use_emerald_hm_ids():
+    assert ITEM_NAMES[339] == "HM01"
+    assert ITEM_NAMES[340] == "HM02"
+    assert ITEM_NAMES[341] == "HM03"
+    assert ITEM_NAMES[342] == "HM04"
+    assert ITEM_NAMES[343] == "HM05"
+    assert ITEM_NAMES[344] == "HM06"
+    assert ITEM_NAMES[345] == "HM07"
+    assert ITEM_NAMES[346] == "HM08"
 
 
 def test_gba_rom_header_detects_emerald(tmp_path: Path):
