@@ -4,20 +4,35 @@ Repeatedly loads a save state placed in front of Prof Elm's starter
 Pokeballs, picks Totodile, and reads party-slot-0 DVs the instant the
 party fills.  On non-shiny attempts we reload immediately — no nickname
 typing, no Elm follow-up dialog — saving ~2350 frames vs. running the
-full sequence every loop.  Only on a shiny do we advance the rest of
-the dialog, type "KIWI", and snapshot the state.
+full sequence every loop.  Only on a target shiny do we advance the
+rest of the dialog, type "KIWI", and snapshot the state.
+
+Every shiny found (target or not) is logged to ``shinies.jsonl`` with
+the master seed, attempt index, and DV/timing data needed to reproduce
+the exact roll via ``--replay-attempt N --master-seed 0x...``.
 
 What actually changes DVs between attempts is mix_rng() — see its
-docstring.  Idle frame ticks do NOT advance Gen-2's RNG; only
-input-handler invocations do.
+docstring.  Press patterns are OS-entropy-driven; idle ticks within
+mix_rng matter too because the game's VBlank handler stirs rDIV into
+the RNG state every frame.
 
 Run with the project venv active:
     source .venv/bin/activate
     python shiny_starter.py
+
+    # Show cumulative shiny history without launching the emulator:
+    python shiny_starter.py --stats
+
+    # Reproduce a previously-found shiny by its (master_seed, attempt):
+    python shiny_starter.py --master-seed 0xDEADBEEFCAFEBABE --replay-attempt 4242
 """
 
 from __future__ import annotations
 
+import argparse
+import datetime
+import hashlib
+import json
 import random
 import secrets
 import signal
@@ -52,6 +67,10 @@ SHINY_STATE = ROOT / "roms" / "shiny_totodile_kiwi.state"
 # empirical distribution offline. Cheap — one line-buffered write per
 # attempt, ~70 B/line, ~50 KB/hour at 12 attempts/sec.
 DV_LOG_PATH = ROOT / "shiny_dv_log.jsonl"
+# Append-only JSONL log of every shiny found (target or not). Includes
+# everything needed to reproduce the roll: master seed, attempt index,
+# ROM + save-state hashes. Survives across runs.
+SHINY_LOG_PATH = ROOT / "shinies.jsonl"
 
 TOTODILE_ID = 158
 
@@ -135,16 +154,72 @@ THROUGHPUT_INTERVAL = 50
 # read of party_count returns garbage, check whether SVBK matches.
 ADDR_SVBK = 0xFF70
 
-# Per-run seed.  Used only for logging now — variability across
-# attempts comes from a process-wide os.urandom-seeded random.Random,
-# not the previous attempt-derived LCG (see mix_rng()).
-RUN_SEED = time.time_ns() & 0xFFFF
-# Process-wide RNG used to drive mix_rng().  Explicitly seeded from
-# OS entropy so every attempt picks an independent press pattern; the
-# previous attempt-derived LCG produced only ~790 distinct DV outcomes
-# over 300 attempts (verified empirically — see commit log).
-RNG = random.Random(secrets.randbits(128))
+# Golden-ratio constant for bit-avalanche mixing of (master, attempt)
+# → 64-bit attempt seed.  Adjacent attempt indices produce
+# uncorrelated press patterns despite differing in just one bit.
+_ATTEMPT_MIX = 0x9E3779B97F4A7C15
 SHOULD_EXIT = False
+
+
+def attempt_rng_for(master_seed: int, attempt: int) -> random.Random:
+    """Build the random.Random used to drive mix_rng() for *attempt*.
+
+    Deterministic in (master_seed, attempt); independent across attempts.
+    Reproducing a shiny is then a matter of replaying (master_seed,
+    attempt) against the same ROM + save state + PyBoy version.
+    """
+    return random.Random(
+        master_seed ^ ((attempt * _ATTEMPT_MIX) & 0xFFFFFFFFFFFFFFFF)
+    )
+
+
+def file_sha1(path: Path) -> str:
+    """SHA-1 of *path*'s contents. Used to fingerprint ROM + save state."""
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def load_shiny_history() -> list[dict]:
+    """Read all entries from SHINY_LOG_PATH. Missing file = []."""
+    if not SHINY_LOG_PATH.exists():
+        return []
+    entries = []
+    with open(SHINY_LOG_PATH, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    return entries
+
+
+def print_shiny_history(history: list[dict]) -> None:
+    """One-line-per-shiny summary printed at startup / on --stats."""
+    if not history:
+        print("Shiny history: (none yet)")
+        return
+    targets = [s for s in history if s.get("target")]
+    print(f"Shiny history: {len(history)} total, {len(targets)} matching the current ATK filter")
+    by_atk: dict[int, int] = {}
+    for s in history:
+        by_atk[s.get("atk", -1)] = by_atk.get(s.get("atk", -1), 0) + 1
+    atk_summary = ", ".join(f"ATK={a}:{n}" for a, n in sorted(by_atk.items()))
+    print(f"  by ATK: {atk_summary}")
+    for s in history[-5:]:
+        marker = "TARGET" if s.get("target") else "      "
+        iso = s.get("iso", "?")
+        print(
+            f"  {marker}  {iso}  attempt={s.get('attempt'):>6}  "
+            f"ATK={s.get('atk'):2} DEF={s.get('def'):2} "
+            f"SPD={s.get('spd'):2} SPC={s.get('spc'):2}  "
+            f"master={s.get('master_seed', '?')}"
+        )
 
 
 def _signal_handler(sig: int, _frame) -> None:
@@ -156,7 +231,87 @@ def _signal_handler(sig: int, _frame) -> None:
     SHOULD_EXIT = True
 
 
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Pokemon Gold shiny-Totodile starter farm.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument(
+        "--master-seed",
+        type=lambda s: int(s, 0),
+        default=None,
+        help="Override the 64-bit master seed (hex with 0x, or decimal). "
+             "Combined with --replay-attempt, reproduces a logged shiny.",
+    )
+    p.add_argument(
+        "--replay-attempt",
+        type=int,
+        default=None,
+        help="Run exactly one attempt at this index, save the resulting "
+             "PyBoy state to roms/replay_<seed>_a<N>.state, and exit. "
+             "Use with --master-seed to reproduce a logged shiny.",
+    )
+    p.add_argument(
+        "--stats",
+        action="store_true",
+        help="Print cumulative shiny history (from shinies.jsonl) and exit. "
+             "Does not launch the emulator.",
+    )
+    return p.parse_args(argv)
+
+
+def log_shiny_found(
+    *,
+    master_seed: int,
+    attempt: int,
+    dvs,
+    target: bool,
+    rom_sha1: str,
+    state_sha1: str,
+    elapsed_s: float,
+    run_frames: int,
+    extra: dict | None = None,
+) -> dict:
+    """Append a shiny record to SHINY_LOG_PATH. Returns the entry written."""
+    entry = {
+        "ts": time.time(),
+        "iso": datetime.datetime.now().isoformat(timespec="seconds"),
+        "master_seed": f"0x{master_seed:016x}",
+        "attempt": attempt,
+        "atk": dvs.attack,
+        "def": dvs.defense,
+        "spd": dvs.speed,
+        "spc": dvs.special,
+        "raw_dvs": f"0x{dvs.raw:04x}",
+        "shiny": True,
+        "target": bool(target),
+        "min_atk": MIN_ATK_DV,
+        "max_atk": MAX_ATK_DV,
+        "elapsed_s": round(elapsed_s, 2),
+        "run_frames": run_frames,
+        "rom_sha1": rom_sha1,
+        "state_sha1": state_sha1,
+        "reproduce": (
+            f"python shiny_starter.py --master-seed 0x{master_seed:016x} "
+            f"--replay-attempt {attempt}"
+        ),
+    }
+    if extra:
+        entry.update(extra)
+    try:
+        with open(SHINY_LOG_PATH, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except OSError as e:
+        print(f"  warning: failed to write {SHINY_LOG_PATH}: {e}", file=sys.stderr)
+    return entry
+
+
 def main() -> int:
+    args = parse_args()
+
+    if args.stats:
+        print_shiny_history(load_shiny_history())
+        return 0
     if not STATE.exists():
         print(f"ERROR: save state not found at {STATE}", file=sys.stderr)
         print(file=sys.stderr)
@@ -174,7 +329,24 @@ def main() -> int:
         return 1
     slow = SPEED == "SLOW"
 
-    print(f"RUN_SEED=0x{RUN_SEED:04X} (OS-entropy mix_rng; 6-14 presses/attempt)")
+    master_seed = (
+        args.master_seed if args.master_seed is not None else secrets.randbits(64)
+    )
+    replay_attempt = args.replay_attempt
+
+    rom_sha1 = file_sha1(ROM)
+    state_sha1 = file_sha1(STATE)
+
+    history = load_shiny_history()
+    print_shiny_history(history)
+    print()
+    print(f"MASTER_SEED=0x{master_seed:016x}  (OS-entropy mix_rng; 8-16 presses + 0-511 frame jitter)")
+    print(f"ROM sha1={rom_sha1[:12]}…  save_state sha1={state_sha1[:12]}…")
+    if replay_attempt is not None:
+        print(
+            f"REPLAY MODE: running only attempt {replay_attempt} "
+            f"with master_seed=0x{master_seed:016x}, then exiting."
+        )
     print(
         f"Hunting shiny Totodile with ATK DV in "
         f"[{MIN_ATK_DV}, {MAX_ATK_DV}]  (HEADLESS={HEADLESS}, SPEED={SPEED})"
@@ -337,8 +509,8 @@ def main() -> int:
 
     # -- RNG mixing --------------------------------------------------------
 
-    def mix_rng(attempt: int) -> None:
-        """Mix Gen-2's RNG by pressing B/SELECT in an OS-entropy-driven
+    def mix_rng(attempt: int, rng: random.Random) -> None:
+        """Mix Gen-2's RNG by pressing B/SELECT in an entropy-driven
         pattern, then add an idle-tick cycle jitter.
 
         Each B/SELECT press goes through the joypad handler, which is
@@ -346,29 +518,32 @@ def main() -> int:
         hRandomSub.  Different press patterns produce different cycle
         deltas → different rDIV reads → different DVs at gen time.
 
-        The OS-entropy press loop alone got us from ~790 effective DV
-        outcomes to ~3500.  The trailing idle-tick jitter (0..511
-        frames) widens the cycle-delta range another ~8 bits, which
-        empirically pushes effective coverage close to the full 65536
-        DV space.  Idle ticks DO matter here because the game's own
-        VBlank handler calls Random each frame — those calls stir rDIV
-        into the RNG state too.
+        The press loop alone got us from ~790 effective DV outcomes to
+        ~3500.  The trailing idle-tick jitter (0..511 frames) widens
+        the cycle-delta range another ~8 bits, which empirically
+        pushes effective coverage close to the full 65536 DV space.
+        Idle ticks DO matter here because the game's own VBlank handler
+        calls Random each frame — those calls stir rDIV into the RNG
+        state too.
 
-        Reproducibility of a given attempt index is dropped — shinies
-        are captured via save_state at find time, not replayed.
+        *rng* is a random.Random whose seed is derived from
+        (master_seed, attempt) — see attempt_rng_for().  This keeps
+        each attempt's press pattern independent across attempts AND
+        reproducible: same (master_seed, attempt) → same pattern →
+        same DVs, given the same ROM + save state + PyBoy version.
         """
-        n_presses = RNG.randint(8, 16)
+        n_presses = rng.randint(8, 16)
         for _ in range(n_presses):
-            button = "b" if RNG.getrandbits(1) else "select"
+            button = "b" if rng.getrandbits(1) else "select"
             # Widened from the old 3..10 range — more cycle-delta
             # variance per press means richer rDIV coverage.
-            gap = RNG.randint(3, 30)
+            gap = rng.randint(3, 30)
             press(button, hold=A_HOLD, gap=gap)
         # Trailing cycle jitter: 0..511 idle frames lets the game's
         # per-VBlank Random() calls accumulate at varying rDIV phases,
         # which empirically breaks past the ~3500 plateau we hit with
         # press-mixing alone.
-        tick(RNG.randint(0, 511))
+        tick(rng.randint(0, 511))
         dbg(f"mix_rng attempt={attempt} n_presses={n_presses}")
 
     # -- DV / nickname readers ---------------------------------------------
@@ -438,7 +613,9 @@ def main() -> int:
 
     # -- main loop ----------------------------------------------------------
 
-    attempt = 0
+    # In replay mode, jump the counter to (replay - 1) so the first
+    # iteration runs at attempt == replay_attempt.
+    attempt = (replay_attempt - 1) if replay_attempt is not None else 0
     signal.signal(signal.SIGINT, _signal_handler)
     try:
         while True:
@@ -449,14 +626,15 @@ def main() -> int:
             load_state()
             dbg(
                 f"=== attempt {attempt} (SPEED={SPEED}, DUMP_MEMORY={DUMP_MEMORY}, "
-                f"HEADLESS={HEADLESS}, RUN_SEED=0x{RUN_SEED:04X}, "
+                f"HEADLESS={HEADLESS}, master=0x{master_seed:016x}, "
                 f"ATK target [{MIN_ATK_DV},{MAX_ATK_DV}]) ==="
             )
 
-            # Single OS-entropy-driven press pattern per attempt.
-            # See mix_rng() docstring for why the previous
-            # prime_rng_run + attempt-derived LCG combo was dropped.
-            mix_rng(attempt)
+            # Per-attempt RNG seeded from (master_seed, attempt) so the
+            # press pattern is independent across attempts but fully
+            # reproducible given the pair.  See mix_rng() docstring.
+            rng = attempt_rng_for(master_seed, attempt)
+            mix_rng(attempt, rng)
 
             # Phase 1: Pokeball interact + "WANT THIS TOTODILE?" YES.
             filled = False
@@ -536,12 +714,15 @@ def main() -> int:
                     else:
                         seen_dvs[key] = attempt
                 # One line-buffered JSONL write — survives a kill -9.
+                # master_seed is the same for every line in a run; it
+                # bloats the file (~24 B/line × 12 a/s ≈ 1 MB/hour
+                # extra) but makes each line self-contained for grep.
                 dv_log.write(
                     f'{{"a":{attempt},"sp":{species},'
                     f'"atk":{dvs.attack},"def":{dvs.defense},'
                     f'"spd":{dvs.speed},"spc":{dvs.special},'
                     f'"shiny":{int(shiny)},"target":{int(target)},'
-                    f'"seed":{RUN_SEED}}}\n'
+                    f'"master":"0x{master_seed:016x}"}}\n'
                 )
 
             if attempt % THROUGHPUT_INTERVAL == 0:
@@ -583,6 +764,49 @@ def main() -> int:
                         f"  unique DV combos: {uniq}/{attempt} "
                         f"(dups {dup_count}, exp ~{exp_dups:.1f} for fair RNG over 2^16)"
                     )
+
+            # Log every shiny (target or not) to shinies.jsonl with
+            # full (master_seed, attempt) reproduction info.  Non-target
+            # shinies happen ~3x as often as target ones; capturing
+            # them is valuable for confirming RNG health and tracking
+            # the user's empirical shiny rate.
+            if shiny and species == TOTODILE_ID:
+                shiny_elapsed = time.monotonic() - start_time
+                log_shiny_found(
+                    master_seed=master_seed,
+                    attempt=attempt,
+                    dvs=dvs,
+                    target=target,
+                    rom_sha1=rom_sha1,
+                    state_sha1=state_sha1,
+                    elapsed_s=shiny_elapsed,
+                    run_frames=total_frames[0],
+                )
+                tag = "TARGET" if target else "non-target"
+                print(
+                    f"  → logged {tag} shiny to {SHINY_LOG_PATH.name}.  "
+                    f"Reproduce with: --master-seed 0x{master_seed:016x} "
+                    f"--replay-attempt {attempt}"
+                )
+
+            # Replay mode short-circuits the loop: we've done the one
+            # attempt the user asked about, captured its state, and
+            # printed its DVs.  Skip the dialog/nickname flow entirely.
+            if replay_attempt is not None:
+                replay_state_path = ROOT / "roms" / (
+                    f"replay_{master_seed:016x}_a{attempt}.state"
+                )
+                with open(replay_state_path, "wb") as f:
+                    pyboy.save_state(f)
+                print(
+                    f"REPLAY DONE: attempt={attempt} "
+                    f"ATK={dvs.attack} DEF={dvs.defense} "
+                    f"SPD={dvs.speed} SPC={dvs.special} "
+                    f"{'shiny' if shiny else 'not shiny'}"
+                    f"{' (target)' if target else ''}"
+                )
+                print(f"REPLAY DONE: state saved to {replay_state_path}")
+                break
 
             if species != TOTODILE_ID:
                 print(
