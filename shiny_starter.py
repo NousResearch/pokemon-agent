@@ -99,7 +99,7 @@ HEADLESS = True
 # Gen-2 shinies require DEF=SPD=SPC=10 and ATK ∈ {2,3,6,7,10,11,14,15};
 # of those, 14 and 15 are the highest-ATK shinies.  Tighten this range
 # to keep hunting for a better roll than a previously-found shiny.
-MIN_ATK_DV = 14
+MIN_ATK_DV = 15
 MAX_ATK_DV = 15
 
 # Bounds for each phase.  These are pressed-with-dialog-aware-waits, so
