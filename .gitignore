@@ -39,3 +39,7 @@ saves/
 # GBA shiny search cache + debug frames (regenerable)
 _lg_shiny_*.npz
 _dbg_*.png
+
+# wild Mankey hunt artifacts (regenerable)
+leafgreen_mankey_finds.jsonl
+grass_hunt.log

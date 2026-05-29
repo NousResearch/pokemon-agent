@@ -110,7 +110,11 @@ def _is_shiny(pid):
     return ((TID ^ SID ^ (pid >> 16) ^ (pid & 0xFFFF)) & 0xFFFF) < 8
 
 
+FINDS_LOG = str(ROOT / "leafgreen_mankey_finds.jsonl")
+
+
 def _worker(args):
+    import json
     wid, deadline, seed0, count_target = args
     core, base = _make_runner()
     rng = random.Random((seed0 ^ (wid * 0x9E3779B1)) & 0xFFFFFFFF)
@@ -125,7 +129,18 @@ def _worker(args):
         enc += 1
         species, level, pid, ivs = r
         if species == MANKEY and _is_shiny(pid):
-            finds.append((V, pid, level, ivs.as_tuple()))
+            iv = ivs.as_tuple()
+            finds.append((V, pid, level, iv))
+            # Durable, append-only log so a long run's progress survives.
+            try:
+                with open(FINDS_LOG, "a") as f:
+                    f.write(json.dumps({
+                        "ts": time.time(), "V": f"0x{V:08X}", "pid": f"0x{pid:08X}",
+                        "nature": NATURES[pid % 25], "level": level, "ivs": list(iv),
+                        "score": list(_score(pid, iv)),
+                    }) + "\n")
+            except OSError:
+                pass
     return wid, trials, enc, finds
 
 
@@ -193,7 +208,15 @@ def main():
         print(f"  V=0x{V:08X} nature={NATURES[pid % 25]:<8} L{level} IVs(H,A,D,Sp,SpA,SpD)={iv}")
     best = phys[0]
     print(f"\nBEST: V=0x{best[0]:08X} nature={NATURES[best[1] % 25]} IVs={best[3]}")
-    print(f"reproduce + save:  shiny_grass_leafgreen.py --replay 0x{best[0]:08X}")
+    # Auto-reproduce the best and save the battle state, so a long unattended
+    # run finishes with a usable result.
+    core, base = _make_runner()
+    r = _run_seed(core, base, best[0])
+    if r is not None and r[0] == MANKEY and _is_shiny(r[2]):
+        from pokemon_agent.gba_state import save_state_file
+        save_state_file(core, OUT_STATE)
+        print(f"saved battle state -> {OUT_STATE}")
+    print(f"reproduce:  shiny_grass_leafgreen.py --replay 0x{best[0]:08X}")
     return 0
 
 
