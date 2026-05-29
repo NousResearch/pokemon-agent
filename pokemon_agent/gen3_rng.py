@@ -63,40 +63,46 @@ independent of shininess, so for a fixed TID/SID shiny+flawless is impossible
 FR/LG wild PIDs — nature is only manipulable by seed choice.
 
 ================================================================================
-5. THE RESIDUAL BARRIER: offline *prediction* needs CPU-cycle modeling
+5. Generation is CLEAN and offline-predictable (verified by instrumentation)
 ================================================================================
-IMPORTANT: this is NOT non-determinism.  Given (save state + written seed +
-exact input) a run is fully deterministic and bit-for-bit reproducible — which
-is exactly why ``shiny_grass_leafgreen --replay <seed>`` regenerates a found
-encounter.  The emulator computes all CPU-cycle timing for us.
+Single-stepping the generation frame and logging every ``Random()`` call's
+return + VCOUNT shows the sequence is exactly §4, call-for-call, with NO extra
+mid-generation advance for normal loops.  Example (seed 0x11111111, Rattata):
 
-What's blocked is *cheap offline prediction* — computing the outcome with pure
-LCG math, without running the emulator.  Two effects depend on CPU **cycles**,
-which a call-counting model doesn't track:
+    idx2 = slot  (->slot 0)   idx3 = level   idx4 = nature (246E % 25 = 1)
+    idx5..10 = failed nature-loop pairs       idx11,12 = matching PID (0xD7FA8F35)
+    idx13 = IV1 (immediately after PID)        idx14 = IV2
 
-(a) **VBlank insertion point.**  One VBlank fires *during* generation and
-    inserts one extra ``Random()`` advance.  WHERE it lands is set by when
-    VCOUNT crosses (cumulative CPU cycles, incl. the nature-loop's per-iteration
-    branch timing), NOT by the RNG-call count.  Proof: seeds 0x00000000 and
-    0x11111111 trigger on the same frame at the same generation start (call
-    294), yet the insert lands at call-offset 99 vs 12.  Same call-start,
-    different insert point → it tracks cycles, not calls.  So gRngValue at
-    generation start does not by itself determine the (PID, IV) outcome; the
-    full machine (cycle) state does.  (Classic Method H-1/H-2/H-4, widened by
-    the loop.)
+The whole generation runs in the visible region (VCOUNT ~16-66) and finishes
+long before VBlank (VCOUNT 160), so no VBlank fires *during* it.  The per-frame
+ambient calls (§2) sit at the frame's *start* (VCOUNT ~198), i.e. before the
+generation, and are already part of the walk model — not a mid-gen insert.
+``generate_wild()`` reproduces real encounters call-for-call given the correct
+generation seed (the RNG state right before the slot call).
 
-(b) **Rate-check gating** (which frame/turn triggers) — this part is RNG-based
-    (a WildEncounterRandom comparison) and is likely offline-modelable; (a) is
-    the cycle-based holdout.
+(Earlier notes here claimed a cycle-dependent "VBlank insertion barrier"; that
+was WRONG — an artifact of two buggy probes, a mis-located generation seed and
+an input-misaligned re-step.  Determinism was never in question; the generation
+is genuinely clean and computable offline.)
 
-To predict (a) offline you must count CPU cycles of the battle-init path — i.e.
-reimplement part of the emulator's timing (laborious, not impossible).  This is
-why tools work from the boot seed + counted "advances" and use **Sweet Scent**
-to force generation at a controlled time so the VBlank lands consistently —
-making the cheap call-counting model faithful and the one-shot reversible, like
-the starter.  Until then, walking hunts use the (fully reproducible) emulation
-search in :mod:`shiny_grass_leafgreen`; this module's generator is exact for the
-clean no-vblank (H-1) case and is the foundation for the Sweet-Scent one-shot.
+Caveat: a *very* long nature-loop (hundreds of iterations) could push the
+generation past VCOUNT 160 and take one real VBlank advance mid-stream (the
+classic Method H-2/H-4) — rare, and detectable by checking whether the gen
+window crosses scanline 160.
+
+================================================================================
+5b. What's left for a full offline WALKING one-shot
+================================================================================
+Generation: solved (§4/§5).  The remaining piece is the **rate-check gating** —
+which frame/turn the encounter triggers (hence which generation seed G is used).
+That is RNG-based (a ``WildEncounterRandom`` comparison vs the area rate, per
+step/turn) plus the seed-independent per-frame profile (§2), so it is
+analytically modelable: step the seed through the per-frame calls, run the rate
+check each turn, and at the first pass feed the resulting seed into
+:func:`generate_wild`.  Once that's modeled, the offline 2^32 search + reverse
+lookup (§6) gives the globally optimal encounter as a one-shot.  Until then,
+walking hunts use the (fully reproducible) emulation search in
+:mod:`shiny_grass_leafgreen`.
 
 ================================================================================
 6. Reverse lookup ("seed for THIS outcome")
