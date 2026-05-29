@@ -63,32 +63,40 @@ independent of shininess, so for a fixed TID/SID shiny+flawless is impossible
 FR/LG wild PIDs — nature is only manipulable by seed choice.
 
 ================================================================================
-5. THE RESIDUAL BARRIER: cycle-timing effects (vblank position + rate gating)
+5. THE RESIDUAL BARRIER: offline *prediction* needs CPU-cycle modeling
 ================================================================================
-What's NOT analytically predictable offline for a *walking* encounter, because
-it depends on CPU cycle timing rather than the seed alone:
+IMPORTANT: this is NOT non-determinism.  Given (save state + written seed +
+exact input) a run is fully deterministic and bit-for-bit reproducible — which
+is exactly why ``shiny_grass_leafgreen --replay <seed>`` regenerates a found
+encounter.  The emulator computes all CPU-cycle timing for us.
 
-(a) **VBlank insertion point.**  Exactly one VBlank typically fires *during*
-    generation and inserts one extra ``Random()`` advance.  WHERE it lands
-    (between PID halves, mid nature-loop, before IVs, ...) is set by when VCOUNT
-    crosses — i.e. by how many CPU cycles the (variable-length) loop has run.
-    We confirmed all sample encounters match the model with exactly one
-    insertion, but at seed-specific offsets (99, 12, 44 calls in).  So the same
-    generation seed can yield different (PID, IV) outcomes depending on this
-    insertion — it doesn't reduce to a single offline result.  (This is the
-    classic Method H-1/H-2/H-4 indeterminacy, widened by the long loop.)
+What's blocked is *cheap offline prediction* — computing the outcome with pure
+LCG math, without running the emulator.  Two effects depend on CPU **cycles**,
+which a call-counting model doesn't track:
 
-(b) **Rate-check gating.**  Which frame/turn the encounter triggers (hence the
-    generation seed) depends on the rate roll + step-feedback timing.
+(a) **VBlank insertion point.**  One VBlank fires *during* generation and
+    inserts one extra ``Random()`` advance.  WHERE it lands is set by when
+    VCOUNT crosses (cumulative CPU cycles, incl. the nature-loop's per-iteration
+    branch timing), NOT by the RNG-call count.  Proof: seeds 0x00000000 and
+    0x11111111 trigger on the same frame at the same generation start (call
+    294), yet the insert lands at call-offset 99 vs 12.  Same call-start,
+    different insert point → it tracks cycles, not calls.  So gRngValue at
+    generation start does not by itself determine the (PID, IV) outcome; the
+    full machine (cycle) state does.  (Classic Method H-1/H-2/H-4, widened by
+    the loop.)
 
-Both need cycle-accurate emulation to predict from a written seed.  This is why
-tools (PokeFinder/RNG Reporter) work from the *boot* seed + a counted "advance"
-and use **Sweet Scent** to force the encounter at a controlled time (making the
-generation a fixed advance with predictable vblank alignment) — turning it into
-the same clean, reversible offline problem as the starter.  Until we model the
-timing (or use Sweet Scent), walking hunts use the emulation search in
-:mod:`shiny_grass_leafgreen`; this module's generator is exact for the clean
-(no-vblank, H-1) case and is the foundation for the Sweet-Scent one-shot.
+(b) **Rate-check gating** (which frame/turn triggers) — this part is RNG-based
+    (a WildEncounterRandom comparison) and is likely offline-modelable; (a) is
+    the cycle-based holdout.
+
+To predict (a) offline you must count CPU cycles of the battle-init path — i.e.
+reimplement part of the emulator's timing (laborious, not impossible).  This is
+why tools work from the boot seed + counted "advances" and use **Sweet Scent**
+to force generation at a controlled time so the VBlank lands consistently —
+making the cheap call-counting model faithful and the one-shot reversible, like
+the starter.  Until then, walking hunts use the (fully reproducible) emulation
+search in :mod:`shiny_grass_leafgreen`; this module's generator is exact for the
+clean no-vblank (H-1) case and is the foundation for the Sweet-Scent one-shot.
 
 ================================================================================
 6. Reverse lookup ("seed for THIS outcome")
