@@ -84,6 +84,27 @@ Lower-level (via `gba.core`, the mgba core):
 - **silence the noisy BIOS logger** before loading: `import mgba.log;
   mgba.log.silence()`
 
+## Playing the game / creating save states (`play_gba.py`)
+
+mGBA's bindings have no built-in window, so `play_gba.py` renders the
+framebuffer and takes input via **pygame (SDL2)**. SDL works inside the
+devbox over the host's X11/Wayland (`DISPLAY` is forwarded; the x11 driver
+is used).
+
+```
+distrobox enter devbox -- \
+  /var/home/karce/Projects/pokemon-agent/.venv-gba/bin/python play_gba.py
+```
+
+Controls: arrows = D-pad, `Z`/`X` = A/B, `Enter` = Start, `Backspace` =
+Select, `Q`/`W` = L/R, hold `Space` = turbo, `Esc` = quit. Save states
+(mGBA raw-state format, exactly what the shiny scripts load): `1-9` load
+slot, `Shift+1-9` save slot (`roms/leafgreen.state<N>`), `F5` save the
+canonical `roms/leafgreen_starter.state`, `F9` load it.
+
+For the **starter-reset hunt**: play to the moment just before you confirm
+your starter, press `F5`. The shiny script reloads that state and re-rolls.
+
 ## Gen 3 vs Gen 2 shiny mechanics (important — different!)
 
 Gen 2 (Gold) shininess is a function of **DVs**. Gen 3 is completely
