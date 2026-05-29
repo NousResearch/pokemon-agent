@@ -6,7 +6,9 @@ the seed also re-decides when the encounter triggers, so the PID rolls at a
 non-constant offset (no clean offline model).  See docs/GBA_SETUP.md.
 
 So we search instead — but deterministically: each trial writes a 32-bit
-seed into ``gRngValue`` at the in-grass state, walks a fixed pattern until
+seed into ``gRngValue`` at the in-grass state, jiggles the player left/right
+in place (turning triggers the encounter check every ~3 frames, ~7x more
+encounters/sec than walking whole tiles) until
 an encounter, and reads the wild mon.  Shininess can't be predicted without
 emulating, so we parallelise across cores and keep every shiny Mankey found
 within a time budget, then pick the best IVs for a physical attacker.
@@ -36,7 +38,14 @@ OUT_STATE = str(ROOT / "roms" / "leafgreen_shiny_mankey.ss1")
 ENEMY = 0x0202402C          # gEnemyParty[0]
 RNGVALUE = 0x03005000       # gRngValue
 MANKEY = 56
-WALK_CAP = 200              # frames per trial before giving up on an encounter
+# "Jiggle" the player left/right in place: turning triggers the wild-encounter
+# check every ~3 frames (hold 2 / release 1), far more often than a full walk
+# step (~22 frames) — empirically ~141 frames to an encounter vs ~225 walking,
+# and it reliably triggers (almost no dead-end trials).  Verified all encounters
+# are valid wild species.
+JIGGLE_HOLD = 2
+JIGGLE_REL = 1
+JIGGLE_CAP = 450            # frames per trial before giving up on an encounter
 SETTLE = 16                 # frames after PID appears, so IVs/level populate
 TID = 51376
 SID = 36462
@@ -86,19 +95,20 @@ def _run_seed(core, base, V):
     core.memory.u32[RNGVALUE] = V & 0xFFFFFFFF
     base_pid = core.memory.u32[ENEMY]
     frames = 0
-    step = 0
+    i = 0
     triggered = False
-    while frames < WALK_CAP:
-        btn = core.KEY_DOWN if (step % 2 == 0) else core.KEY_UP
-        for ph in range(22):
-            core.set_keys(btn) if ph < 18 else core.set_keys()
+    period = JIGGLE_HOLD + JIGGLE_REL
+    while frames < JIGGLE_CAP:
+        btn = core.KEY_LEFT if (i % 2 == 0) else core.KEY_RIGHT
+        for ph in range(period):
+            core.set_keys(btn) if ph < JIGGLE_HOLD else core.set_keys()
             core.run_frame(); frames += 1
             if core.memory.u32[ENEMY] != base_pid:
                 triggered = True
                 break
         if triggered:
             break
-        step += 1
+        i += 1
     if not triggered:
         return None
     for _ in range(SETTLE):
