@@ -43,3 +43,5 @@ _dbg_*.png
 # wild Mankey hunt artifacts (regenerable)
 leafgreen_mankey_finds.jsonl
 grass_hunt.log
+adamant_best.jsonl
+adamant_hunt.log
