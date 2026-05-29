@@ -3,9 +3,10 @@ import os, time, json
 from concurrent.futures import ProcessPoolExecutor
 
 ROM = "roms/Pokemon - LeafGreen Version (USA).gba"
-STATE = "roms/Pokemon - LeafGreen Version (USA).ss2"
+STATE = "roms/Pokemon - LeafGreen Version (USA).ss4"  # new tile (calibrated)
 ENEMY = 0x0202402C; RNG = 0x03005000; TID, SID = 51376, 36462
-ADAMANT = 3; OFFSETS = (294, 276, 258)
+ADAMANT = 3; OFFSETS = (199, 181, 217)  # ss4 gen-offset cluster
+MANKEY_SLOTS = (1, 3, 5, 9)  # ss4 Route-22 Mankey slots
 
 
 def enum_range(args):
@@ -19,7 +20,7 @@ def enum_range(args):
         n = min(chunk, end - b); G = np.arange(b, b + n, dtype=np.uint64); b += n
         s = stp(G); slot = np.searchsorted(cums, (s >> SIX) % np.uint64(100), side='right')
         s = stp(s); s = stp(s); nat = (s >> SIX) % np.uint64(25)
-        gi = np.nonzero(((slot == 1) | (slot == 3)) & (nat == ADAMANT))[0]
+        gi = np.nonzero(np.isin(slot, MANKEY_SLOTS) & (nat == ADAMANT))[0]
         if gi.size:
             Gs = G[gi]; cur = s[gi].copy(); matched = np.zeros(gi.size, bool); pid = np.zeros(gi.size, np.uint64)
             for _ in range(200):
@@ -89,7 +90,7 @@ def main():
     n31 = lambda iv: sum(1 for x in iv if x == 31)
     a = [(V, iv) for V, iv in finds if iv[1] == 31 and iv[3] == 31]
     a.sort(key=lambda x: (n31(x[1]), x[1][0], x[1][2], sum(x[1])), reverse=True)
-    with open("adamant_a31s31.jsonl", "w") as f:
+    with open("adamant_a31s31_ss4.jsonl", "w") as f:
         for V, iv in a:
             f.write(json.dumps({"write": "0x%08X" % V, "ivs": list(iv), "n31": n31(iv)}) + "\n")
     print("Atk31&Spe31 Adamant found: %d" % len(a), flush=True)
