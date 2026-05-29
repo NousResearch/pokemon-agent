@@ -165,6 +165,47 @@ def lcg_next(seed: int) -> int:
     return (seed * LCG_MULT + LCG_ADD) & U32
 
 
+# Modular inverse of the multiplier, for stepping the LCG backwards.
+_LCG_MULT_INV = pow(LCG_MULT, -1, 1 << 32)
+
+
+def lcg_prev(seed: int) -> int:
+    """Step the Gen 3 LCG one step **backwards** (inverse of :func:`lcg_next`)."""
+    return ((seed - LCG_ADD) * _LCG_MULT_INV) & U32
+
+
+def rewind(seed: int, n: int) -> int:
+    """Step the LCG backwards ``n`` times.
+
+    Used to convert a desired *generation-time* seed into the value to write
+    into ``gRngValue`` ``n`` RNG-calls earlier (the fixed offset between a
+    pre-generation save state and the PID roll).
+    """
+    for _ in range(n):
+        seed = lcg_prev(seed)
+    return seed
+
+
+def gen_method1(seed: int) -> tuple[int, Gen3IVs]:
+    """Generate (PID, IVs) by Gen 3 **Method 1** starting from ``seed``.
+
+    Four consecutive ``Random()`` calls, no gaps: PID low, PID high, then two
+    15-bit IV words.  This is how FRLG rolls the starter (verified against
+    LeafGreen: PID at RNG offset 90 from the written seed, IVs immediately
+    after).
+    """
+    s = lcg_next(seed); pid_low = (s >> 16) & U16
+    s = lcg_next(s); pid_high = (s >> 16) & U16
+    pid = ((pid_high << 16) | pid_low) & U32
+    s = lcg_next(s); iv1 = (s >> 16) & 0x7FFF
+    s = lcg_next(s); iv2 = (s >> 16) & 0x7FFF
+    ivs = Gen3IVs(
+        hp=iv1 & 31, attack=(iv1 >> 5) & 31, defense=(iv1 >> 10) & 31,
+        speed=iv2 & 31, sp_attack=(iv2 >> 5) & 31, sp_defense=(iv2 >> 10) & 31,
+    )
+    return pid, ivs
+
+
 def rng16(seed: int) -> int:
     """The 16-bit value a Random() call yields: the high half of the
     *next* seed.  Returns just the 16-bit number (use :func:`lcg_next`

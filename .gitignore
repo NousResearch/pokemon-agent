@@ -35,3 +35,7 @@ saves/
 
 # Environment
 .env
+
+# GBA shiny search cache + debug frames (regenerable)
+_lg_shiny_*.npz
+_dbg_*.png
