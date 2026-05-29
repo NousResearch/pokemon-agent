@@ -84,12 +84,54 @@ Lower-level (via `gba.core`, the mgba core):
 - **silence the noisy BIOS logger** before loading: `import mgba.log;
   mgba.log.silence()`
 
-## Playing the game / creating save states (`play_gba.py`)
+## Playing the game / creating save states
 
-mGBA's bindings have no built-in window, so `play_gba.py` renders the
-framebuffer and takes input via **pygame (SDL2)**. SDL works inside the
-devbox over the host's X11/Wayland (`DISPLAY` is forwarded; the x11 driver
-is used).
+### Recommended: the mGBA Flatpak app (has audio + a real UI)
+
+The host is atomic Fedora, so install via Flatpak (one-time, already done):
+
+```
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install -y --user flathub io.mgba.mGBA
+flatpak run io.mgba.mGBA
+```
+
+mGBA has `host` filesystem access, so open the ROM directly from
+`roms/Pokemon - LeafGreen Version (USA).gba`. Play to the point you want,
+then **save a state** (mGBA: `Shift+F1..F9` save slot, `F1..F9` load).
+Slot states are written next to the ROM, e.g.
+`roms/Pokemon - LeafGreen Version (USA).ss1`.
+
+For the **starter-reset hunt**: play to the moment just before you confirm
+your starter, then save to a slot. Tell me which slot — the hunt script
+loads that file.
+
+#### Savestate format bridge (important)
+
+mGBA's native savestates are **PNG files** (the screenshot *is* the file,
+with the state embedded). The bindings' `load_raw_state()` only understands
+the bare struct and will **reject** a PNG state. Load mGBA app states
+through `pokemon_agent/gba_state.py`, which calls libmgba's own
+`mCoreLoadStateNamed`:
+
+```python
+import mgba.core
+from pokemon_agent.gba_state import load_state_file
+core = mgba.core.load_path("roms/Pokemon - LeafGreen Version (USA).gba")
+core.reset()
+load_state_file(core, "roms/Pokemon - LeafGreen Version (USA).ss1")
+```
+
+Verified: a PNG savestate written by libmgba loads back and restores state
+exactly. (The app is 0.10.5 and the bindings are 0.10.3 — same savestate
+era; if a real app-made state ever fails to load, rebuild the bindings from
+the 0.10.5 tag via `scripts/build_mgba.sh`.)
+
+### Alternative: `play_gba.py` (scripted/headless, no audio)
+
+A pygame (SDL2) window driving mGBA from Python; **no audio** (the audio
+subsystem is stubbed). Useful for automation, not for comfortable play.
+Run inside the devbox:
 
 ```
 distrobox enter devbox -- \
@@ -98,12 +140,8 @@ distrobox enter devbox -- \
 
 Controls: arrows = D-pad, `Z`/`X` = A/B, `Enter` = Start, `Backspace` =
 Select, `Q`/`W` = L/R, hold `Space` = turbo, `Esc` = quit. Save states
-(mGBA raw-state format, exactly what the shiny scripts load): `1-9` load
-slot, `Shift+1-9` save slot (`roms/leafgreen.state<N>`), `F5` save the
-canonical `roms/leafgreen_starter.state`, `F9` load it.
-
-For the **starter-reset hunt**: play to the moment just before you confirm
-your starter, press `F5`. The shiny script reloads that state and re-rolls.
+written here use `save_raw_state()` (bare struct), so load them with
+`load_raw_state()`, *not* the `gba_state` helper.
 
 ## Gen 3 vs Gen 2 shiny mechanics (important — different!)
 
