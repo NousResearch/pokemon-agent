@@ -91,18 +91,30 @@ classic Method H-2/H-4) — rare, and detectable by checking whether the gen
 window crosses scanline 160.
 
 ================================================================================
-5b. What's left for a full offline WALKING one-shot
+5b. Status of the offline model (measured against the emulator)
 ================================================================================
-Generation: solved (§4/§5).  The remaining piece is the **rate-check gating** —
-which frame/turn the encounter triggers (hence which generation seed G is used).
-That is RNG-based (a ``WildEncounterRandom`` comparison vs the area rate, per
-step/turn) plus the seed-independent per-frame profile (§2), so it is
-analytically modelable: step the seed through the per-frame calls, run the rate
-check each turn, and at the first pass feed the resulting seed into
-:func:`generate_wild`.  Once that's modeled, the offline 2^32 search + reverse
-lookup (§6) gives the globally optimal encounter as a one-shot.  Until then,
-walking hunts use the (fully reproducible) emulation search in
-:mod:`shiny_grass_leafgreen`.
+The gRngValue chain is a perfectly CLEAN LCG from the written seed — verified:
+``advance(written_seed, total_calls) == gRngValue`` exactly, zero reseeds.  So
+the whole encounter is a pure function of the written seed.
+
+VALIDATED (30/30 random encounters): given the trigger offset N, the generation
+seed is ``advance(written_seed, N + 2)`` (the +2 = the burst frame's leading
+ambient calls), and :func:`generate_wild` predicts **PID / nature / species /
+slot exactly, 100% of the time** (shiny + nature + species are fully solvable
+offline).
+
+PARTIALLY predictable: the **IVs**.  One VBlank may insert between the PID and
+the IV reads (the gap), and for longer nature-loops the gap can be >1, so
+gap∈{0,1} only nails the IVs ~20% of the time.  Workflow: filter offline on the
+exact PID criteria (shiny + Mankey + nature), then read the actual IVs from a
+quick emulator verification of the handful of survivors.
+
+Trigger offset N (which turn fires) clusters at WILD_TRIGGER_OFFSETS
+(256/274/292 here), gated by the per-turn rate check + the separate
+WildEncounterRandom RNG; predicting it exactly per seed would need that two-RNG
+model, but for searching we just try the few offsets and verify.  Reverse
+lookup: pick a target PID, find a generation seed G that makes it, then
+``rewind(G, N+2)`` is the value to write (verify in-emulator).
 
 ================================================================================
 6. Reverse lookup ("seed for THIS outcome")
@@ -163,14 +175,17 @@ class WildSpawn:
     loop_iters: int   # nature-lock iterations (RNG burst length = 2*loop_iters)
 
 
-def generate_wild(gen_seed: int, max_loop: int = 1000) -> WildSpawn:
-    """Simulate FR/LG wild generation (Method H-1, no VBlank) from ``gen_seed``,
-    the seed state *before* the slot ``Random()`` call.
+def generate_wild(gen_seed: int, iv_gap: int = 0, max_loop: int = 1000) -> WildSpawn:
+    """Simulate FR/LG wild generation from ``gen_seed`` — the seed state right
+    *before* the slot ``Random()`` call.
 
-    Mirrors ``GenerateWildMon`` -> ``CreateMonWithNature`` exactly:
-    slot, level, nature, then the nature-lock PID loop, then two IV words.
-    Per §5, a real run may have one VBlank advance inserted at a timing-
-    dependent point; this function gives the clean no-vblank result.
+    Mirrors ``GenerateWildMon`` -> ``CreateMonWithNature`` exactly: slot, level,
+    nature, the nature-lock PID loop, then two IV words.  ``iv_gap`` models the
+    single VBlank advance that may land between the PID and the IV reads
+    (0 = H-1, no vblank; 1 = H-2).  The slot/level/nature/PID are *before* the
+    gap, so they're identical regardless — only the IVs depend on ``iv_gap``.
+    Validated against the emulator: e.g. seed 0x00000000 reproduces at
+    gen-seed = advance(seed, 294), iv_gap=1.
     """
     s = lcg_next(gen_seed); slot = slot_index(s >> 16)
     s = lcg_next(s); level_rand = (s >> 16) & U16
@@ -183,6 +198,8 @@ def generate_wild(gen_seed: int, max_loop: int = 1000) -> WildSpawn:
         pid = ((hi << 16) | lo) & 0xFFFFFFFF
         if pid % NUM_NATURES == nature:
             break
+    for _ in range(iv_gap):
+        s = lcg_next(s)
     s = lcg_next(s); iv1 = (s >> 16) & 0x7FFF
     s = lcg_next(s); iv2 = (s >> 16) & 0x7FFF
     ivs = Gen3IVs(
@@ -191,3 +208,26 @@ def generate_wild(gen_seed: int, max_loop: int = 1000) -> WildSpawn:
     )
     return WildSpawn(slot=slot, level_rand=level_rand, nature=nature,
                      pid=pid, ivs=ivs, loop_iters=iters)
+
+
+# Trigger-offset constants (LeafGreen, this grass state, jiggle input): the
+# encounter generation begins at advance(written_seed, N+2) where the +2 is the
+# burst frame's leading ambient calls, and N (calls before the burst frame)
+# clusters at these few values (gated by the per-turn rate check + a separate
+# WildEncounterRandom RNG).  See §5b.
+WILD_TRIGGER_OFFSETS = (256, 274, 292)
+WILD_GEN_DELTA = 2  # ambient calls in the burst frame before the slot roll
+
+
+def predict_wild(written_seed: int, trigger_offset: int):
+    """Offline prediction of the encounter for ``written_seed`` (the value put
+    into gRngValue) given the trigger offset N (one of WILD_TRIGGER_OFFSETS).
+
+    Returns (h1, h2): the two candidate :class:`WildSpawn` results for the
+    no-vblank and one-vblank IV alignments.  PID/nature/slot are identical in
+    both; only IVs differ.  Verify against the emulator to resolve which.
+    """
+    gen_seed = written_seed
+    for _ in range(trigger_offset + WILD_GEN_DELTA):
+        gen_seed = lcg_next(gen_seed)
+    return generate_wild(gen_seed, 0), generate_wild(gen_seed, 1)
