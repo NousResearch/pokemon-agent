@@ -10,6 +10,7 @@ build/
 
 # Virtual environments
 .venv/
+.venv-gba/
 venv/
 env/
 
