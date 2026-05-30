@@ -143,6 +143,12 @@ from pokemon_agent.shiny_gen3 import Gen3IVs, lcg_next, rewind  # noqa: F401 (re
 U16 = 0xFFFF
 NUM_NATURES = 25
 
+# Cap on the nature-lock loop, shared by the per-seed predictor (wild_outcome /
+# generate_wild) and the bulk enumerator (wild_enumerate) so they agree exactly.
+# The loop is Geometric(~1/25); P(len > 1000) ≈ (24/25)^1000 ≈ 1e-18, so 1000 is
+# effectively unbounded while keeping the enumerator's worst case finite.
+MAX_NATURE_LOOP = 1000
+
 # Empirical overworld per-frame RNG-call profile (LeafGreen, grass, jiggling).
 # Seed-independent.  Documented as prose so it can be re-measured per location.
 MEASURED_OVERWORLD_PROFILE = "≈2 calls/frame, +1 every ~9 frames (cosmetic)"
@@ -182,7 +188,7 @@ class WildSpawn:
     loop_iters: int   # nature-lock iterations (RNG burst length = 2*loop_iters)
 
 
-def generate_wild(gen_seed: int, iv_gap: int = 0, max_loop: int = 1000) -> WildSpawn:
+def generate_wild(gen_seed: int, iv_gap: int = 0, max_loop: int = MAX_NATURE_LOOP) -> WildSpawn:
     """Simulate FR/LG wild generation from ``gen_seed`` — the seed state right
     *before* the slot ``Random()`` call.
 
@@ -238,7 +244,7 @@ WILD_IV_VBLANK_NOTE = (
 )
 
 
-def wild_outcome(gen_seed: int, iv1_threshold: int, max_loop: int = 2000) -> WildSpawn:
+def wild_outcome(gen_seed: int, iv1_threshold: int, max_loop: int = MAX_NATURE_LOOP) -> WildSpawn:
     """Fully OFFLINE wild outcome (PID **and** IVs) for a calibrated env.
 
     Same slot/level/nature/nature-lock-loop as :func:`generate_wild`, then the
@@ -270,7 +276,7 @@ def wild_outcome(gen_seed: int, iv1_threshold: int, max_loop: int = 2000) -> Wil
                      pid=pid, ivs=ivs, loop_iters=iters)
 
 
-def wild_outcome_both(gen_seed: int, max_loop: int = 2000):
+def wild_outcome_both(gen_seed: int, max_loop: int = MAX_NATURE_LOOP):
     """Both IV variants a candidate can take (iv1 from o1 vs o2; iv2=o3 fixed).
 
     Returns ``(short_T_spawn, long_T_spawn)`` — identical except HP/Atk/Def.

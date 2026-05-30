@@ -43,6 +43,13 @@ dev = [
     "httpx>=0.25.0",
     "ruff>=0.1.0",
 ]
+# Offline RNG predictor: numpy is required; numba is an optional JIT accelerator
+# for the candidate enumeration (the pure code falls back to numpy if absent).
+rng = ["numpy>=1.24"]
+fast = [
+    "pokemon-agent[rng]",
+    "numba>=0.59",
+]
 all = [
     "pokemon-agent[pyboy,dashboard]",
 ]
@@ -67,6 +74,13 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
+# The numeric RNG modules use a deliberate compact style (semicolon-separated
+# statements) for the tight numpy/LCG kernels; allow it.
+ignore = ["E701", "E702"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "emulator: requires the mgba emulator + a ROM/state (devbox .venv-gba only)",
+    "slow: long-running test",
+]
