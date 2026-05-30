@@ -124,6 +124,20 @@ Per-species scripts become thin configs over `shiny_grass_core.py`.
 - [ ] **5. Cleanup** — port Spearow hunt to offline IVs; add per-env band to the
   manifest + more envs to realize the ceiling variant; retire old probes; commit.
 
+## Realizability ceiling (2026-05-30)
+
+The offline model exposes each candidate's TWO IV variants (iv1=o1 vs o2). Which
+one an env realizes depends on the trigger offset's threshold T (loop<T→o1,
+loop≥T→o2). Achievable offsets via {tile states × jiggle patterns} span T≈[18,59]
+(`probe_pattern.py`: LR1:1→offset ~98, LR2:1→59/39/29/19, etc.). So a candidate's
+variant B is realizable only when loop ≥ ~18, variant A only when loop ≤ ~55.
+`best_realizable_nidoran.py` ranks the space offline then brute-realizes the
+top-120 across 6 combos. **Conclusion: the best REALIZABLE physical Nidoran♂ is
+the already-delivered Lonely 27/31/14/31/23/16 (Atk31&Spe31, +Atk, HP27);** the
+math-ceiling Jolly 29/31/30/31/25/3 is **un-realizable** (loop 15 < T-floor ~18).
+Mild 27/31/31/30/13/29 is the bulkiest alternative (Def31/SpD29, Spe 1 off). The
+realizable ceiling = the delivered mon; no env coverage beats it.
+
 ## Decisions / findings log
 
 - 2026-05-30: Plan created. User: prefer fastest knob that consistently widens
