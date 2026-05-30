@@ -51,3 +51,9 @@ adamant_a31s31.jsonl
 adamant_a31s31_ss4.jsonl
 pikachu_results.jsonl
 pikachu_hunt.log
+
+# grass shiny pipeline artifacts (regenerable: caches, per-env results, manifest)
+cache_*.npz
+*_results.jsonl
+results_*.jsonl
+envs_route3.json
