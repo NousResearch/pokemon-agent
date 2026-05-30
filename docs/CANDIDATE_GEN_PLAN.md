@@ -141,6 +141,28 @@ math-ceiling Jolly 29/31/30/31/25/3 is **un-realizable** (loop 15 < T-floor ~18)
 Mild 27/31/31/30/13/29 is the bulkiest alternative (Def31/SpD29, Spe 1 off). The
 realizable ceiling = the delivered mon; no env coverage beats it.
 
+## Offline-strategy integrated into hunts — KEY LIMITATION (2026-05-30)
+
+`hunt_nidoranm.py`/`shiny_grass_spearow.py` now call `hunt_hybrid.run_hybrid_hunt`
+(enumerate → calibrate_env → predict_env_exact → confirm only boundary). **~91.5%
+of IV predictions need NO emulator.** BUT a fundamental limit surfaced: the IV
+model is exact *given the offset*, and the **per-offset thresholds are
+OFFSET-DEPENDENT** (φ0 varies per offset) while the **trigger offset is
+seed-dependent and NOT offline-predictable** (rate-check RNG). Proof: the Lonely
+Nidoran (loop 4) realizes (27,31,14,31,23,16) at its natural offset 19, but the
+offset-123 calibration predicts iv2 wrong (tb_lo=5@123 vs ≤4@19). So a SINGLE-offset
+calibration only correctly locates candidates that fire at that offset.
+Consequence — **Spearow (35%): hybrid found the right Hasty 31/31/17/31/19/31 4×31
+(good candidates fire at the dominant offset); Nidoran (1%): hybrid found a weak
+Adamant 4/31/3/15/31/2 (the good Lonely fires at offset 19, missed).**
+
+⇒ Offline-only *IV prediction* works (exact per offset). Offline-only *locating of
+the global best* does NOT (offset unknowable) — needs **Sweet Scent** (forces one
+fixed offset for all seeds → fully offline) OR the multi-env/multi-offset confirm
+(emulation) the previous hunts used. TODO: rank by BEST-POSSIBLE offline IV (over
+the offset-variants) + multi-offset confirm to realize — recovers the global best
+for low-rate species while keeping IV prediction offline.
+
 ## Route B — HYBRID landed (2026-05-30, validated)
 
 `fixed_trigger` (back-and-forth walk) pins phi0; `gba_calibrate.calibrate_env`
