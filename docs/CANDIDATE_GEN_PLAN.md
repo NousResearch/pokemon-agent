@@ -141,6 +141,23 @@ math-ceiling Jolly 29/31/30/31/25/3 is **un-realizable** (loop 15 < T-floor ~18)
 Mild 27/31/31/30/13/29 is the bulkiest alternative (Def31/SpD29, Spe 1 off). The
 realizable ceiling = the delivered mon; no env coverage beats it.
 
+## Route B — deterministic trigger result (2026-05-30, honest finding)
+
+Built `gba_trigger.fixed_trigger` (back-and-forth full steps — every step's
+encounter check at the same scanline) + `gen3_rng.wild_outcome_exact` (sharp
+3-threshold model: iv1∈{o1,o2} @ ta; iv2∈{o2,o3,o4} @ tb_lo/tb_hi; enum now caches
+o4) + `gba_calibrate.calibrate_env/validate`. **The walk pins φ0 FAR better than
+the jiggle** (band measured 0 at small N) **but a residual remains**: at 260
+samples, route3_grass offset 123 calibrated ta=39 (NON-SHARP) and validate hit
+**46/50 (92%)** — the misses are boundary loops where iv1's scanline sits right at
+160 and a few scanlines of *seed-dependent* φ0 jitter flips it. So a non-Sweet-
+Scent trigger shrinks but does not perfectly collapse the band (matches the plan's
+"≤1 residual" risk). **Truly-zero needs Sweet Scent (single fixed code path) or a
+hybrid: predict offline (exact for ~92-99%) + micro-confirm only candidates whose
+loop is within ~3 of a threshold** (usually 0 for a specific target ⇒ "no emulator
+in practice"). Pure offline predict + tiny boundary confirm is the recommended
+landing. Tools: `gba_band.py` (band width per trigger), `gba_calibrate.py`.
+
 ## Route B — cycle mechanism DECODED (2026-05-30, `trace_run.py`)
 
 Single-stepped one generation (core.step + PC + VCOUNT) and nailed the exact

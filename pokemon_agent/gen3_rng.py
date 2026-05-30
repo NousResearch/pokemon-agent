@@ -287,6 +287,41 @@ def wild_outcome_both(gen_seed: int, max_loop: int = MAX_NATURE_LOOP):
             wild_outcome(gen_seed, iv1_threshold=0, max_loop=max_loop))         # always o2
 
 
+def wild_outcome_exact(gen_seed: int, ta: int, tb_lo: int, tb_hi: int,
+                       max_loop: int = MAX_NATURE_LOOP) -> WildSpawn:
+    """Fully exact offline outcome under a DETERMINISTIC trigger (pinned phi0).
+
+    With o1..o4 = the four post-PID RNG outputs, the per-frame VBlank Random()
+    inserts a *sharp* number of calls determined by which scanline each IV read
+    lands on (vs 160). So both reads are step-functions of the nature-loop length:
+        iv1 = o1 if loop < ta else o2          (iv1 crosses scanline 160 at ta)
+        iv2 = o2 / o3 / o4  for 0 / 1 / 2 VBlanks before it (thresholds tb_lo, tb_hi)
+    The common regime is iv1=o1, iv2=o3. ``ta, tb_lo, tb_hi`` are the per-env
+    thresholds from gba_calibrate.calibrate_env() (band-collapsed, no ambiguity).
+    """
+    s = lcg_next(gen_seed); slot = slot_index(s >> 16)
+    s = lcg_next(s); level_rand = (s >> 16) & U16
+    s = lcg_next(s); nature = (s >> 16) % NUM_NATURES
+    pid = 0; iters = 0
+    for iters in range(1, max_loop + 1):
+        s = lcg_next(s); lo = (s >> 16) & U16
+        s = lcg_next(s); hi = (s >> 16) & U16
+        pid = ((hi << 16) | lo) & 0xFFFFFFFF
+        if pid % NUM_NATURES == nature:
+            break
+    outs = []
+    for _ in range(4):
+        s = lcg_next(s); outs.append((s >> 16) & 0x7FFF)
+    iv1 = outs[1 if iters >= ta else 0]
+    iv2 = outs[1 + (1 if iters >= tb_lo else 0) + (1 if iters >= tb_hi else 0)]
+    ivs = Gen3IVs(
+        hp=iv1 & 31, attack=(iv1 >> 5) & 31, defense=(iv1 >> 10) & 31,
+        speed=iv2 & 31, sp_attack=(iv2 >> 5) & 31, sp_defense=(iv2 >> 10) & 31,
+    )
+    return WildSpawn(slot=slot, level_rand=level_rand, nature=nature,
+                     pid=pid, ivs=ivs, loop_iters=iters)
+
+
 def calibrate_iv_threshold(samples):
     """Pure: derive the per-offset iv1 threshold ``T`` from emulator samples.
 

@@ -90,11 +90,12 @@ def _enum_range(args):
         s1 = stp(post); o1 = (s1 >> SIX) & np.uint64(0x7FFF)
         s2 = stp(s1); o2 = (s2 >> SIX) & np.uint64(0x7FFF)
         s3 = stp(s2); o3 = (s3 >> SIX) & np.uint64(0x7FFF)
+        s4 = stp(s3); o4 = (s4 >> SIX) & np.uint64(0x7FFF)
         pl = pid & np.uint64(0xFFFF); ph = pid >> SIX
         sh = matched & (((xb ^ ph ^ pl) & np.uint64(0xFFFF)) < np.uint64(8))
         for e in np.nonzero(sh)[0]:
             out.append((int(Gs[e]), int(pid[e]), int(tgt[e]), int(iters[e]),
-                        int(o1[e]), int(o2[e]), int(o3[e])))
+                        int(o1[e]), int(o2[e]), int(o3[e]), int(o4[e])))
     return out
 
 
@@ -106,16 +107,16 @@ def enumerate_candidates(species, slots, tid, sid, allowed_natures=tuple(range(2
     Cached to `cache_path` (.npz). `kernel`: "auto" (numba if available else
     numpy), "numba", or "numpy"."""
     import numpy as np
-    keys = ("G", "pid", "nature", "iters", "o1", "o2", "o3")
+    keys = ("G", "pid", "nature", "iters", "o1", "o2", "o3", "o4")
     if cache_path and os.path.exists(cache_path):
         d = np.load(cache_path)
-        if "o3" in d:
+        if "o4" in d:
             if verbose:
                 print("Stage1: loaded %d cached candidates from %s"
                       % (len(d["G"]), cache_path), flush=True)
             return {k: d[k] for k in keys}
         elif verbose:
-            print("Stage1: cache lacks IV fields; re-enumerating", flush=True)
+            print("Stage1: cache lacks o4 IV field; re-enumerating", flush=True)
     if kernel == "auto":
         kernel = "numba" if _get_numba_kernel() is not None else "numpy"
     NW = workers or os.cpu_count(); span = (1 << 32) // NW
@@ -125,12 +126,12 @@ def enumerate_candidates(species, slots, tid, sid, allowed_natures=tuple(range(2
     with ProcessPoolExecutor(NW) as ex:
         for r in ex.map(_enum_range, ranges):
             out.extend(r)
-    cols = list(zip(*out)) if out else ([],) * 7
+    cols = list(zip(*out)) if out else ([],) * 8
     arr = {
         "G": np.array(cols[0], dtype=np.uint64), "pid": np.array(cols[1], dtype=np.uint64),
         "nature": np.array(cols[2], dtype=np.uint8), "iters": np.array(cols[3], dtype=np.int32),
         "o1": np.array(cols[4], dtype=np.uint16), "o2": np.array(cols[5], dtype=np.uint16),
-        "o3": np.array(cols[6], dtype=np.uint16),
+        "o3": np.array(cols[6], dtype=np.uint16), "o4": np.array(cols[7], dtype=np.uint16),
     }
     if verbose:
         print("Stage1: enumerated %d candidates in %.1fs (kernel=%s)"

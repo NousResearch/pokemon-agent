@@ -17,13 +17,14 @@ def _run(kernel):
 def test_enumerator_agrees_with_wild_outcome():
     out = _run("numpy")
     assert len(out) > 20, "expected a handful of shiny candidates in 2^20 seeds"
-    for G, pid, nat, iters, o1, o2, o3 in out:
+    for G, pid, nat, iters, o1, o2, o3, o4 in out:
         a, b = wild_outcome_both(G)            # o1-variant, o2-variant
         assert a.pid == pid and a.nature == nat and a.loop_iters == iters
         # shiny check (these came from the enumerator's shiny filter)
         assert ((TID ^ SID ^ (pid >> 16) ^ (pid & 0xFFFF)) & 0xFFFF) < 8
         assert a.ivs.as_tuple() == _unpack_iv(o1, o3)
         assert b.ivs.as_tuple() == _unpack_iv(o2, o3)
+        assert 0 <= o4 <= 0x7FFF
 
 
 @pytest.mark.skipif(_get_numba_kernel() is None, reason="numba not installed")

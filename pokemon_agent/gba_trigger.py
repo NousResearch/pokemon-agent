@@ -79,6 +79,33 @@ def jiggle_trigger(B, V, axis="LR", hold=2, rel=1, cap=70, settle=20):
 _emulate = jiggle_trigger
 
 
+def fixed_trigger(B, V, step_frames=16, cap_frames=600, settle=20):
+    """Deterministic fixed-phase trigger (Route B): write V, then take identical
+    back-and-forth full steps (down/up, ``step_frames`` each) until an encounter
+    fires. Every step's encounter check runs at the SAME intra-frame scanline, so
+    the generation phase phi0 is seed-independent -> the IV-threshold is SHARP (no
+    ambiguous band; verified band=0 vs jiggle's ~1-3). Stays on two tiles (high
+    yield). Returns (pid, iv_tuple, species) or None."""
+    core = B["core"]; mem = B["mem"]
+    core.load_raw_state(B["base"]); mem.u32[RNG] = V & 0xFFFFFFFF; bp = mem.u32[ENEMY]
+    D, U = B["D"], B["U"]
+    frames = 0; i = 0; hit = False
+    while frames < cap_frames:
+        key = D if (i % 2 == 0) else U
+        for _ in range(step_frames):
+            core.set_keys(key); core.run_frame(); frames += 1
+            if mem.u32[ENEMY] != bp:
+                hit = True; break
+        if hit:
+            break
+        i += 1
+    if not hit:
+        return None
+    for _ in range(settle):
+        core.run_frame()
+    return _read_enemy(mem)
+
+
 def _verify_chunk(args):
     from pokemon_agent.shiny_gen3 import rewind
     sub, state, offsets, axis, hold, rel, target_sp = args
