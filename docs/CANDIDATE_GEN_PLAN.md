@@ -121,8 +121,11 @@ Per-species scripts become thin configs over `shiny_grass_core.py`.
   (Earlier "off-chain 56%" was a red herring: it was the VBlank `Random()` landing
   between iv1 and iv2, which the old *consecutive* search in `gba_iv_model2.py`
   couldn't see — never a reseed.)
-- [ ] **5. Cleanup** — port Spearow hunt to offline IVs; add per-env band to the
-  manifest + more envs to realize the ceiling variant; retire old probes; commit.
+- [x] **5. Spearow ported to offline path** — `shiny_grass_spearow.py` now uses
+  the offline-IV pipeline (enumerate+predict, realize top-N across combos).
+  Validated: best realizable = the caught Hasty 31/31/17/31/19/31 4×31, in 58.7s
+  (cached). First-time enumerate 553s (66k candidates; cached after). Remaining
+  optional: deterministic fixed-frame trigger (Route B); retire old probe scripts.
 
 ## Realizability ceiling (2026-05-30)
 
