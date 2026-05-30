@@ -141,6 +141,27 @@ math-ceiling Jolly 29/31/30/31/25/3 is **un-realizable** (loop 15 < T-floor ~18)
 Mild 27/31/31/30/13/29 is the bulkiest alternative (Def31/SpD29, Spe 1 off). The
 realizable ceiling = the delivered mon; no env coverage beats it.
 
+## Route B — HYBRID landed (2026-05-30, validated)
+
+`fixed_trigger` (back-and-forth walk) pins phi0; `gba_calibrate.calibrate_env`
+measures, per env, the clean thresholds `ta/tb_lo/tb_hi` AND the **measured
+ambiguous loop ranges** (where residual jitter flips the IV). `is_boundary_loop`
++ `wild_enumerate.predict_env_exact` then split candidates: those OUTSIDE the
+ambiguous ranges are predicted **EXACTLY offline** (no emulator); only the few
+INSIDE (boundary) are confirmed in-emulator. Validated on route3_grass: **NON-
+boundary 50/50 = 100% exact**, boundary≈23% at the messy offset 123 (cleaner
+offsets → far fewer). So: zero emulator for the vast majority; a specific target
+is usually non-boundary ⇒ "no emulator in practice", always correct. Tests:
+`tests/integration/test_route_b.py` (non-boundary exact), `test_regression.py`
+(0x55FF2959→Hasty Spearow), `tests/unit` predict_env_exact boundary logic.
+
+**TODO (deferred — needs the move in-game): Sweet Scent trigger** → single fixed
+code path, no rate-check jitter ⇒ truly sharp threshold (band=0, zero boundary,
+zero emulator for 100%). Add `sweet_scent_trigger` to `gba_trigger.py` and a
+`trigger=` arg to `calibrate_env` once a save with Sweet Scent exists. Also TODO:
+wire the hybrid into the hunt drivers (predict_env_exact + confirm only boundary,
+replacing the top-K confirm).
+
 ## Route B — deterministic trigger result (2026-05-30, honest finding)
 
 Built `gba_trigger.fixed_trigger` (back-and-forth full steps — every step's

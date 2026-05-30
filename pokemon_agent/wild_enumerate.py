@@ -176,6 +176,29 @@ def predict_env_ivs(cands, band):
     return rows
 
 
+def predict_env_exact(cands, ta, tb_lo, tb_hi, ambig_ranges=()):
+    """Hybrid offline IV prediction under a deterministic (phi0-pinned) trigger.
+
+    Resolves both reads from the env thresholds: iv1 in {o1,o2} (at ta); iv2 in
+    {o2,o3,o4} (at tb_lo, tb_hi). Candidates whose nature-loop length falls in a
+    measured ``ambig_ranges`` band are flagged ``boundary=True`` — the only ones
+    the hybrid confirms in-emulator (residual phi0 jitter); all others are exact
+    offline. Returns rows (G, pid, nature, iv_tuple, boundary_bool).
+    """
+    from pokemon_agent.gen3_rng import is_boundary_loop
+    G = cands["G"]; pid = cands["pid"]; nat = cands["nature"]; it = cands["iters"]
+    o = (cands["o1"], cands["o2"], cands["o3"], cands["o4"])
+    rows = []
+    for i in range(len(G)):
+        loop = int(it[i])
+        a = 1 if loop >= ta else 0
+        nb2 = (1 if loop >= tb_lo else 0) + (1 if loop >= tb_hi else 0)
+        iv1 = int(o[a][i]); iv2 = int(o[1 + nb2][i])
+        bdy = is_boundary_loop(loop, ambig_ranges)
+        rows.append((int(G[i]), int(pid[i]), int(nat[i]), _unpack_iv(iv1, iv2), bdy))
+    return rows
+
+
 # ------------------------------- Stage 3: select -------------------------------
 
 def load_results(results_jsonl):

@@ -32,3 +32,26 @@ def test_numba_matches_numpy_bit_identical():
     out_np = _run("numpy")
     out_nb = _run("numba")
     assert out_np == out_nb
+
+
+def test_predict_env_exact_regime_and_boundary():
+    import numpy as np
+
+    from pokemon_agent.wild_enumerate import predict_env_exact
+    cands = dict(
+        G=np.array([1, 2, 3], dtype=np.uint64),
+        pid=np.array([0, 0, 0], dtype=np.uint64),
+        nature=np.array([0, 0, 0], dtype=np.uint8),
+        iters=np.array([10, 40, 100], dtype=np.int32),
+        o1=np.array([100, 200, 300], dtype=np.uint16),
+        o2=np.array([111, 222, 333], dtype=np.uint16),
+        o3=np.array([7, 8, 9], dtype=np.uint16),
+        o4=np.array([70, 80, 90], dtype=np.uint16),
+    )
+    rows = predict_env_exact(cands, ta=50, tb_lo=0, tb_hi=1 << 30, ambig_ranges=[(37, 47)])
+    # loop 10: a=0 -> iv1=o1=100, nb2=1 -> iv2=o3=7; not boundary
+    assert rows[0][4] is False and rows[0][3] == _unpack_iv(100, 7)
+    # loop 40: inside (37,47) -> boundary (confirm in-emulator)
+    assert rows[1][4] is True
+    # loop 100: a=1 -> iv1=o2=333, nb2=1 -> iv2=o3=9; not boundary
+    assert rows[2][4] is False and rows[2][3] == _unpack_iv(333, 9)

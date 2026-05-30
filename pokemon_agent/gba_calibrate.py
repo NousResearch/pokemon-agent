@@ -15,7 +15,12 @@ import random
 import sys
 
 from pokemon_agent.gba_trigger import fixed_trigger, make_bundle
-from pokemon_agent.gen3_rng import MAX_NATURE_LOOP, NUM_NATURES, wild_outcome_exact
+from pokemon_agent.gen3_rng import (
+    MAX_NATURE_LOOP,
+    NUM_NATURES,
+    is_boundary_loop,
+    wild_outcome_exact,
+)
 from pokemon_agent.shiny_gen3 import lcg_next
 
 BIG = 1 << 30
@@ -43,7 +48,7 @@ def _four_outputs(G):
     return pid, it, outs
 
 
-def calibrate_env(state, n=240, seed=7, verbose=True):
+def calibrate_env(state, n=240, seed=7, margin=2, verbose=True):
     """Sample n encounters under fixed_trigger; return a dict with the dominant
     offset, sharp thresholds (ta, tb_lo, tb_hi), whether the band collapsed, and
     per-sample rows for validation."""
@@ -68,47 +73,63 @@ def calibrate_env(state, n=240, seed=7, verbose=True):
     dom = offc.most_common(1)[0][0]
     dr = [(loop, a, nb2) for off, _G, loop, a, nb2, _iv in rows
           if off == dom and a is not None and nb2 is not None]
-    ta = min((loop for loop, a, _nb in dr if a == 1), default=BIG)
-    a0_max = max((loop for loop, a, _nb in dr if a == 0), default=-1)
-    tb_lo = min((loop for loop, _a, nb in dr if nb >= 1), default=BIG)
-    b0_max = max((loop for loop, _a, nb in dr if nb == 0), default=-1)
-    tb_hi = min((loop for loop, _a, nb in dr if nb >= 2), default=BIG)
-    b1_max = max((loop for loop, _a, nb in dr if nb == 1), default=-1)
-    # Sharp (band-collapsed) iff there is no loop-overlap between regimes.
-    sharp = (a0_max < ta) and (b0_max < tb_lo) and (b1_max < tb_hi)
+
+    def _transition(lower_pred, upper_pred):
+        """Clean threshold + ambiguous range for a 0->1 style regime transition.
+        Returns (threshold, ambig_range_or_None): loops < range are `lower`, loops
+        > range are `upper`, loops IN range are ambiguous (residual jitter)."""
+        lo_max = max((loop for loop, a, nb in dr if lower_pred(a, nb)), default=-1)
+        hi_min = min((loop for loop, a, nb in dr if upper_pred(a, nb)), default=BIG)
+        if hi_min >= BIG:
+            return BIG, None                       # never reaches upper regime
+        if lo_max < hi_min:
+            return hi_min, None                    # clean: sharp threshold
+        return lo_max + 1, (hi_min - margin, lo_max + margin)  # overlap -> ambiguous band
+
+    ta, range_a = _transition(lambda a, nb: a == 0, lambda a, nb: a == 1)
+    tb_lo, range_b01 = _transition(lambda a, nb: nb == 0, lambda a, nb: nb >= 1)
+    tb_hi, range_b12 = _transition(lambda a, nb: nb <= 1, lambda a, nb: nb >= 2)
+    ambig = [r for r in (range_a, range_b01, range_b12) if r is not None]
+    sharp = not ambig
     res = dict(state=state, dominant_offset=dom, ta=ta, tb_lo=tb_lo, tb_hi=tb_hi,
-               sharp=sharp, n_dom=len(dr), rows=rows)
+               ambig_ranges=ambig, sharp=sharp, n_dom=len(dr), rows=rows)
     if verbose:
-        print("calibrate_env(%s): offset=%d ta=%s tb_lo=%s tb_hi=%s  band=%s (n=%d)"
+        print("calibrate_env(%s): offset=%d ta=%s tb_lo=%s tb_hi=%s  ambig=%s (n=%d)"
               % (state, dom, ta if ta < BIG else "inf", tb_lo if tb_lo < BIG else "inf",
                  tb_hi if tb_hi < BIG else "inf",
-                 "COLLAPSED(0)" if sharp else "NON-SHARP", len(dr)), flush=True)
+                 ambig if ambig else "NONE(sharp)", len(dr)), flush=True)
     return res
 
 
 def validate(res, verbose=True):
-    """Assert wild_outcome_exact reproduces the emulator IVs for every dominant-
-    offset sample (zero-ambiguity check). Returns (n_ok, n_total, n_offchain)."""
+    """Hybrid check: wild_outcome_exact must reproduce the emulator IVs for every
+    NON-boundary dominant-offset sample (loop outside the measured ambiguous
+    ranges). Boundary samples are the ones the hybrid confirms in-emulator. Returns
+    (nonbound_ok, nonbound_tot, n_boundary, n_offchain)."""
     dom = res["dominant_offset"]; ta, tb_lo, tb_hi = res["ta"], res["tb_lo"], res["tb_hi"]
-    ok = tot = offchain = 0
+    ambig = res["ambig_ranges"]
+    nb_ok = nb_tot = boundary = offchain = 0
     misses = []
-    for off, G, _loop, a, nb2, ivs in res["rows"]:
+    for off, G, loop, a, nb2, ivs in res["rows"]:
         if off != dom:
             continue
         if a is None or nb2 is None:
             offchain += 1; continue
-        tot += 1
+        if is_boundary_loop(loop, ambig):
+            boundary += 1; continue
+        nb_tot += 1
         pred = wild_outcome_exact(G, ta, tb_lo, tb_hi).ivs.as_tuple()
         if pred == tuple(ivs):
-            ok += 1
+            nb_ok += 1
         else:
-            misses.append((G, pred, tuple(ivs)))
+            misses.append((G, loop, pred, tuple(ivs)))
     if verbose:
-        print("validate: %d/%d exact offline predictions at offset %d (off-chain/edge=%d)"
-              % (ok, tot, dom, offchain), flush=True)
-        for G, p, t in misses[:5]:
-            print("  MISS G=0x%08X pred=%s true=%s" % (G, p, t), flush=True)
-    return ok, tot, offchain
+        print("validate: NON-boundary %d/%d exact offline at offset %d; "
+              "boundary(confirm)=%d off-chain=%d"
+              % (nb_ok, nb_tot, dom, boundary, offchain), flush=True)
+        for G, loop, p, t in misses[:6]:
+            print("  MISS G=0x%08X loop=%d pred=%s true=%s" % (G, loop, p, t), flush=True)
+    return nb_ok, nb_tot, boundary, offchain
 
 
 if __name__ == "__main__":

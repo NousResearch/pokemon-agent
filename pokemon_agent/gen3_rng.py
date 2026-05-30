@@ -322,6 +322,16 @@ def wild_outcome_exact(gen_seed: int, ta: int, tb_lo: int, tb_hi: int,
                      pid=pid, ivs=ivs, loop_iters=iters)
 
 
+def is_boundary_loop(loop, ambig_ranges):
+    """True if `loop` falls in any measured ambiguous range — a scanline-160
+    crossing where residual phi0 jitter (under a non-Sweet-Scent trigger) makes the
+    IV non-deterministic in `loop` alone. ``ambig_ranges`` = iterable of inclusive
+    (lo, hi) loop ranges from gba_calibrate. The hybrid confirms ONLY these
+    in-emulator; every other candidate is exact offline."""
+    loop = int(loop)
+    return any(lo <= loop <= hi for (lo, hi) in ambig_ranges)
+
+
 def calibrate_iv_threshold(samples):
     """Pure: derive the per-offset iv1 threshold ``T`` from emulator samples.
 
