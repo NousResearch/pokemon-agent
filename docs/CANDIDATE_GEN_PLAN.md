@@ -141,6 +141,31 @@ math-ceiling Jolly 29/31/30/31/25/3 is **un-realizable** (loop 15 < T-floor ~18)
 Mild 27/31/31/30/13/29 is the bulkiest alternative (Def31/SpD29, Spe 1 off). The
 realizable ceiling = the delivered mon; no env coverage beats it.
 
+## Route B — cycle mechanism DECODED (2026-05-30, `trace_run.py`)
+
+Single-stepped one generation (core.step + PC + VCOUNT) and nailed the exact
+timeline (Hasty Spearow, route3_grass offset 71): the slot/level/nature/PID burst
+runs in the visible region (scanlines ~31→54, all via the one `Random()` routine
+@ PC 0x08044ED8); then ~95 scanlines of non-RNG `CreateMon`/`SetBoxMonData` work;
+then **iv1 @ VCOUNT 149**, the per-frame **VBlank `Random()` @ VCOUNT ~160-206**,
+then **iv2 @ VCOUNT 223**. So `iv1_VCOUNT ≈ φ0 + loop·k + ~95`; **iv1 flips o1→o2
+exactly when its scanline crosses 160** (that's the threshold T), and the ~3-loop
+band is φ0 start-scanline jitter (~a few scanlines) around 160. ⇒ Route B is
+implementable: (1) a deterministic trigger that pins φ0 → sharp T; (2) cycle-exact
+`iv1_VCOUNT(φ0, loop)` vs 160 to resolve the boundary loop. Tracer + finding
+committed; trigger + model + band-collapse validation + integration tests remain.
+
+## Refactor + speed + tests (2026-05-30, commit 68106e6)
+
+Pure/emulator split: `pokemon_agent/wild_enumerate.py` (offline enumerate/predict/
+select), `pokemon_agent/wild_enumerate_numba.py` (@njit kernel, bit-identical to
+numpy, **~7.4× faster**: 16M-seed Spearow range 5.72s→0.77s; full enum ~553s→~75s),
+`pokemon_agent/gba_trigger.py` (emulator: bundle/trigger/verify/confirm — one copy
+vs three). `shiny_grass_core.py` = compat shim (hunts unchanged). Shared
+`MAX_NATURE_LOOP=1000`. **pytest suite** tests/unit (145 pass on host, no emulator):
+lcg, method1, decrypt round-trip, wild_outcome variants, calibrate, slots, and
+numpy-vs-numba bit-identical + enum-vs-wild_outcome cross-check. ruff clean.
+
 ## Decisions / findings log
 
 - 2026-05-30: Plan created. User: prefer fastest knob that consistently widens
