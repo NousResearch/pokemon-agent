@@ -1,18 +1,24 @@
-"""Multi-env (full-coverage) physical shiny Nidoran-male hunt over the Stage1/2/3
-core. Enumerate the fixed candidate universe once (cached), reproduce across all
-envs in the manifest (each env's offset cluster covers a different subset), keep
-the best IV seen per seed, then rank physical-viable picks.
+"""Fully-offline physical shiny Nidoran-male hunt (Route 3, LeafGreen).
+
+Stage 1 enumerates the fixed candidate universe AND predicts IVs offline via the
+decoded VBlank model (pokemon_agent.gen3_rng): iv2 = o3 (env-independent), iv1 in
+{o1, o2} (the env's threshold selects which). So each candidate has two possible
+IV sets, both computable from G — we rank the whole space against the global
+ceiling offline, then CONFIRM only the top-K in-emulator (resolving which iv1
+variant the env realizes) to deliver an exact result. No mass emulation.
 
     distrobox enter devbox -- .venv-gba/bin/python hunt_nidoranm.py
 """
-import json, os, sys
+import json, os, time
 import shiny_grass_core as C
+from pokemon_agent.shiny_gen3 import rewind
+from pokemon_agent.gba_state import save_state_file
 
 TID, SID = 51376, 36462
 SPECIES, SLOTS = 32, (10,)
 CACHE = "cache_nidoranm.npz"
-RESULTS = "results_nidoranm.jsonl"
 OUT_STATE = "roms/leafgreen_shiny_nidoranm.ss1"
+TOPK = 80
 SS5 = "roms/Pokemon - LeafGreen Version (USA).ss5"
 
 
@@ -27,52 +33,54 @@ def metric(iv, nat):
 
 
 def main():
+    t0 = time.time()
     cands = C.enumerate_candidates(SPECIES, SLOTS, TID, SID, cache_path=CACHE)
-    total = len(cands[0])
-    if os.path.exists("envs_route3.json"):
-        envs = json.load(open("envs_route3.json"))["envs"]
-    else:
-        envs = [{"env_id": "ss5", "state": SS5, "axis": "LR", "hold": 2, "rel": 1,
-                 "offsets": [59, 30, 10, 20, 48]}]
-    if os.path.exists(RESULTS):
-        os.remove(RESULTS)
-    for e in envs:
-        C.verify_env(cands, e["state"], e["offsets"], e["env_id"], axis=e["axis"],
-                     hold=e["hold"], rel=e["rel"], target_species=SPECIES, results_jsonl=RESULTS)
+    n = len(cands["G"])
 
-    rows = C.load_results(RESULTS)
-    # Best IV per seed (a seed may appear in several envs; deterministic IV, but
-    # long-loop seeds can have an alternate — keep whichever ranks higher).
-    best_by_G = {}
-    for r in rows:
-        if not phys_viable(r["nature"]):
+    # Offline ranking against the global ceiling: each candidate's two IV variants
+    # (iv1 from o1 vs o2; iv2 = o3 fixed). Keep the better-scoring variant for rank.
+    rows = []
+    for i in range(n):
+        nat = int(cands["nature"][i])
+        if not phys_viable(nat):
             continue
-        G = r["G"]; key = metric(tuple(r["iv"]), r["nature"])
-        if G not in best_by_G or key > metric(tuple(best_by_G[G]["iv"]), best_by_G[G]["nature"]):
-            best_by_G[G] = r
-    uniq = len(best_by_G)
-    phys_universe = int(sum(phys_viable(int(n)) for n in cands[2]))
-    print("\ncoverage: %d/%d physical-viable seeds reproduced (%.0f%%); universe=%d all-nature"
-          % (uniq, phys_universe, 100 * uniq / max(phys_universe, 1), total), flush=True)
+        o1, o2, o3 = int(cands["o1"][i]), int(cands["o2"][i]), int(cands["o3"][i])
+        ivA = C._unpack_iv(o1, o3); ivB = C._unpack_iv(o2, o3)
+        best_iv = ivA if metric(ivA, nat) >= metric(ivB, nat) else ivB
+        rows.append((int(cands["G"][i]), int(cands["pid"][i]), nat, best_iv))
+    rows.sort(key=lambda r: metric(r[3], r[2]), reverse=True)
+    print("offline: %d physical candidates ranked in %.1fs; top predicted:" % (len(rows), time.time() - t0), flush=True)
+    for G, P, nat, iv in rows[:8]:
+        print("  PRED G=0x%08X %-7s IVs=%s #31=%d" % (G, C.NAT[nat], iv, C.n31(iv)), flush=True)
 
-    best = C.select_best(list(best_by_G.values()), metric, top=25)
-    print("\ntop physical shiny Nidoran-male (Atk/Spe-perfect, then #31):", flush=True)
-    for G, P, nat, iv, env in best:
-        print("  G=0x%08X %-7s IVs(H,A,D,Sp,SpA,SpD)=%s #31=%d AtkSpe31=%d env=%s"
-              % (G, C.NAT[nat], iv, C.n31(iv), (iv[1] == 31) + (iv[3] == 31), env), flush=True)
+    # Confirm the top-K across available envs (resolves the env-realized variant).
+    envs = json.load(open("envs_route3.json"))["envs"] if os.path.exists("envs_route3.json") else \
+        [{"env_id": "ss5", "state": SS5, "axis": "LR", "hold": 2, "rel": 1, "offsets": [59, 30, 10, 20, 48]}]
+    t1 = time.time(); confirmed = []
+    for G, P, nat, _iv in rows[:TOPK]:
+        for e in envs:
+            B = C._bundle(e["state"]); done = False
+            for off in e["offsets"]:
+                res = C._emulate(B, rewind(G, off), e["axis"], e["hold"], e["rel"])
+                if res and res[0] == P and res[2] == SPECIES:
+                    confirmed.append((G, P, nat, tuple(res[1]), e["env_id"])); done = True; break
+            if done:
+                break
+    confirmed.sort(key=lambda r: metric(r[3], r[2]), reverse=True)
+    print("\nconfirmed %d/%d top candidates in %.1fs; best confirmed:" % (len(confirmed), TOPK, time.time() - t1), flush=True)
+    for G, P, nat, iv, env in confirmed[:8]:
+        print("  CONF G=0x%08X %-7s IVs=%s #31=%d env=%s" % (G, C.NAT[nat], iv, C.n31(iv), env), flush=True)
 
-    # Save the battle state for the top pick (reproduce in its env).
-    if best:
-        from pokemon_agent.shiny_gen3 import rewind
-        from pokemon_agent.gba_state import save_state_file
-        G, P, nat, iv, env = best[0]
-        em = next(e for e in envs if e["env_id"] == env)
-        B = C._bundle(em["state"])
-        for off in em["offsets"]:
-            res = C._emulate(B, rewind(int(G), off), em["axis"], em["hold"], em["rel"])
-            if res and res[0] == P:
+    if confirmed:
+        G, P, nat, iv, env = confirmed[0]
+        e = next(x for x in envs if x["env_id"] == env)
+        B = C._bundle(e["state"])
+        for off in e["offsets"]:
+            res = C._emulate(B, rewind(G, off), e["axis"], e["hold"], e["rel"])
+            if res and res[0] == P and tuple(res[1]) == iv:
                 save_state_file(B["core"], OUT_STATE)
-                print("\nBEST saved -> %s (G=0x%08X %s IVs=%s)" % (OUT_STATE, G, C.NAT[nat], iv), flush=True)
+                print("\nBEST: G=0x%08X %s IVs=%s -> saved %s (total %.1fs)"
+                      % (G, C.NAT[nat], iv, OUT_STATE, time.time() - t0), flush=True)
                 break
 
 

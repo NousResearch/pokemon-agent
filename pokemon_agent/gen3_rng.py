@@ -103,11 +103,18 @@ ambient calls), and :func:`generate_wild` predicts **PID / nature / species /
 slot exactly, 100% of the time** (shiny + nature + species are fully solvable
 offline).
 
-PARTIALLY predictable: the **IVs**.  One VBlank may insert between the PID and
-the IV reads (the gap), and for longer nature-loops the gap can be >1, so
-gap∈{0,1} only nails the IVs ~20% of the time.  Workflow: filter offline on the
-exact PID criteria (shiny + Mankey + nature), then read the actual IVs from a
-quick emulator verification of the handful of survivors.
+FULLY predictable now: the **IVs** too (see :func:`wild_outcome`).  The old
+"gap" was the per-frame VBlank ``Random()`` (src/main.c ``VBlankIntr``): exactly
+ONE VBlank call lands in the PID->iv2 window.  Measured (gba_iv_model3.py, loops
+1-130, offsets 7-59): with o1,o2,o3 = the 3 RNG outputs after the PID loop,
+``iv2 = o3`` always, and ``iv1 = o1`` if ``loop_iters < T`` else ``o2`` — where
+``T`` is a per-offset loop threshold (the fixed intra-frame VBlank boundary
+crossing the iv1 read; T≈27 at offset 59).  So a candidate has at most TWO IV
+variants (iv1 from o1 vs o2; iv2 fixed) — which one realizes is set by the
+env/offset's ``T``.  This is why different tiles flip ~15-20% of IVs but iv2
+never changes.  ``calibrate_iv_threshold`` derives ``T`` per env from a few
+emulator samples; near ``T`` (a thin loop band) emit both via
+:func:`wild_outcome_both` and confirm one in-emulator.
 
 Trigger offset N (which turn fires) clusters at WILD_TRIGGER_OFFSETS
 (256/274/292 here), gated by the per-turn rate check + the separate
@@ -210,6 +217,87 @@ def generate_wild(gen_seed: int, iv_gap: int = 0, max_loop: int = 1000) -> WildS
                      pid=pid, ivs=ivs, loop_iters=iters)
 
 
+# ============================================================================
+# Deterministic offline IV model (the VBlank-Random insertion, fully decoded)
+# ============================================================================
+# Disassembly (pret/pokefirered): CreateBoxMon reads iv1=Random() then
+# iv2=Random() immediately after the nature-lock PID loop (nothing between), and
+# src/main.c VBlankIntr() calls Random() once per drawn frame.  Measured
+# (gba_iv_model3.py) across loops 1-130 and offsets 7-59: EXACTLY ONE VBlank
+# Random() lands in the PID->iv2 window, so with o1,o2,o3 = the three RNG
+# outputs after the PID loop:
+#     iv2 = o3   (always; the lone VBlank sits before it)
+#     iv1 = o1   if loop_iters <  T   (VBlank falls between iv1 and iv2)
+#     iv1 = o2   if loop_iters >= T   (VBlank falls between PID-end and iv1)
+# T is a per-(offset/env) integer threshold (the loop length at which the fixed
+# intra-frame VBlank boundary crosses the iv1 read).  Calibrate T per env with
+# calibrate_iv_threshold().  Near T (a thin band) iv1 is ambiguous -> emit both.
+WILD_IV_VBLANK_NOTE = (
+    "one VBlank Random() in the PID->iv2 window; iv2=o3 always; iv1=o1 if "
+    "loop<T else o2 (T per offset/env). Measured gba_iv_model3.py."
+)
+
+
+def wild_outcome(gen_seed: int, iv1_threshold: int, max_loop: int = 2000) -> WildSpawn:
+    """Fully OFFLINE wild outcome (PID **and** IVs) for a calibrated env.
+
+    Same slot/level/nature/nature-lock-loop as :func:`generate_wild`, then the
+    decoded VBlank-insertion IV model: ``iv2`` is the 3rd post-PID RNG output;
+    ``iv1`` is the 1st if ``loop_iters < iv1_threshold`` else the 2nd (the lone
+    per-frame VBlank ``Random()`` shifts it).  ``iv1_threshold`` (``T``) is the
+    per-offset loop boundary from :func:`calibrate_iv_threshold`.
+    """
+    s = lcg_next(gen_seed); slot = slot_index(s >> 16)
+    s = lcg_next(s); level_rand = (s >> 16) & U16
+    s = lcg_next(s); nature = (s >> 16) % NUM_NATURES
+    pid = 0; iters = 0
+    for iters in range(1, max_loop + 1):
+        s = lcg_next(s); lo = (s >> 16) & U16
+        s = lcg_next(s); hi = (s >> 16) & U16
+        pid = ((hi << 16) | lo) & 0xFFFFFFFF
+        if pid % NUM_NATURES == nature:
+            break
+    s = lcg_next(s); o1 = (s >> 16) & 0x7FFF
+    s = lcg_next(s); o2 = (s >> 16) & 0x7FFF
+    s = lcg_next(s); o3 = (s >> 16) & 0x7FFF
+    iv1 = o2 if iters >= iv1_threshold else o1
+    iv2 = o3
+    ivs = Gen3IVs(
+        hp=iv1 & 31, attack=(iv1 >> 5) & 31, defense=(iv1 >> 10) & 31,
+        speed=iv2 & 31, sp_attack=(iv2 >> 5) & 31, sp_defense=(iv2 >> 10) & 31,
+    )
+    return WildSpawn(slot=slot, level_rand=level_rand, nature=nature,
+                     pid=pid, ivs=ivs, loop_iters=iters)
+
+
+def wild_outcome_both(gen_seed: int, max_loop: int = 2000):
+    """Both IV variants a candidate can take (iv1 from o1 vs o2; iv2=o3 fixed).
+
+    Returns ``(short_T_spawn, long_T_spawn)`` — identical except HP/Atk/Def.
+    Useful for ranking a candidate's *reachable* IVs across envs, or to cover the
+    thin ambiguous band near a calibrated threshold.
+    """
+    return (wild_outcome(gen_seed, iv1_threshold=1 << 30, max_loop=max_loop),   # always o1
+            wild_outcome(gen_seed, iv1_threshold=0, max_loop=max_loop))         # always o2
+
+
+def calibrate_iv_threshold(samples):
+    """Pure: derive the per-offset iv1 threshold ``T`` from emulator samples.
+
+    ``samples`` = iterable of ``(loop_iters, iv1_uses_o2)`` where ``iv1_uses_o2``
+    is True iff the observed iv1 matched the 2nd post-PID output (vs the 1st).
+    Returns ``(T, ambiguous_band)``: loops ``>= T`` use o2, loops ``< T`` use o1;
+    ``ambiguous_band`` = inclusive ``(lo, hi)`` loop range left unpinned by the
+    samples, or ``None`` if cleanly separated.
+    """
+    o1_max = max((it for it, o2 in samples if not o2), default=-1)
+    o2_min = min((it for it, o2 in samples if o2), default=None)
+    if o2_min is None:
+        return (1 << 30, None)        # never switches within the sampled range
+    band = (o1_max + 1, o2_min - 1) if (o2_min - 1) >= (o1_max + 1) else None
+    return (o2_min, band)
+
+
 # Trigger-offset constants (LeafGreen, this grass state, jiggle input): the
 # encounter generation begins at advance(written_seed, N+2) where the +2 is the
 # burst frame's leading ambient calls, and N (calls before the burst frame)
@@ -219,15 +307,17 @@ WILD_TRIGGER_OFFSETS = (256, 274, 292)
 WILD_GEN_DELTA = 2  # ambient calls in the burst frame before the slot roll
 
 
-def predict_wild(written_seed: int, trigger_offset: int):
-    """Offline prediction of the encounter for ``written_seed`` (the value put
-    into gRngValue) given the trigger offset N (one of WILD_TRIGGER_OFFSETS).
+def predict_wild(written_seed: int, trigger_offset: int, iv1_threshold: int):
+    """Fully OFFLINE prediction of the encounter for ``written_seed`` (the value
+    put into gRngValue) at ``trigger_offset`` with the env's calibrated
+    ``iv1_threshold`` (see :func:`calibrate_iv_threshold`).
 
-    Returns (h1, h2): the two candidate :class:`WildSpawn` results for the
-    no-vblank and one-vblank IV alignments.  PID/nature/slot are identical in
-    both; only IVs differ.  Verify against the emulator to resolve which.
+    Returns a single :class:`WildSpawn` with PID **and** IVs resolved via the
+    decoded VBlank model.  For seeds whose loop length sits in the thin
+    ambiguous band around ``T``, call :func:`wild_outcome_both` instead and
+    confirm in-emulator.
     """
     gen_seed = written_seed
     for _ in range(trigger_offset + WILD_GEN_DELTA):
         gen_seed = lcg_next(gen_seed)
-    return generate_wild(gen_seed, 0), generate_wild(gen_seed, 1)
+    return wild_outcome(gen_seed, iv1_threshold)

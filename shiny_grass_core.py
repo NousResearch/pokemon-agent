@@ -47,30 +47,45 @@ def _enum_range(args):
             continue
         Gs = G[gi]; tgt = nat[gi].astype(np.uint64); cur = s[gi].copy()
         matched = np.zeros(gi.size, bool); pid = np.zeros(gi.size, np.uint64)
-        for _ in range(200):
+        iters = np.zeros(gi.size, np.int32); post = np.zeros(gi.size, np.uint64)
+        for j in range(400):
             s1 = stp(cur); lo = s1 >> SIX; s2 = stp(s1); hi = s2 >> SIX
             p = ((hi << SIX) | lo) & M
-            nm = (~matched) & ((p % np.uint64(25)) == tgt); pid[nm] = p[nm]; matched |= nm; cur = s2
+            nm = (~matched) & ((p % np.uint64(25)) == tgt)
+            pid[nm] = p[nm]; iters[nm] = j + 1; post[nm] = s2[nm]; matched |= nm; cur = s2
             if matched.all():
                 break
+        # Three RNG outputs after the PID loop (env-independent): the VBlank model
+        # picks iv1 from o1/o2 and iv2=o3 (see pokemon_agent.gen3_rng.wild_outcome).
+        s1 = stp(post); o1 = (s1 >> SIX) & np.uint64(0x7FFF)
+        s2 = stp(s1); o2 = (s2 >> SIX) & np.uint64(0x7FFF)
+        s3 = stp(s2); o3 = (s3 >> SIX) & np.uint64(0x7FFF)
         pl = pid & np.uint64(0xFFFF); ph = pid >> SIX
         sh = matched & (((xb ^ ph ^ pl) & np.uint64(0xFFFF)) < np.uint64(8))
         for e in np.nonzero(sh)[0]:
-            out.append((int(Gs[e]), int(pid[e]), int(tgt[e])))
+            out.append((int(Gs[e]), int(pid[e]), int(tgt[e]), int(iters[e]),
+                        int(o1[e]), int(o2[e]), int(o3[e])))
     return out
 
 
 def enumerate_candidates(species, slots, tid, sid, allowed_natures=tuple(range(25)),
                          cache_path=None, workers=None, verbose=True):
     """Stage 1. Enumerate all shiny gen-seeds G producing `species` (via `slots`)
-    with an allowed nature, for this TID/SID. Returns (G, pid, nature) numpy
-    arrays. Cached to `cache_path` (.npz) — state-independent, compute once."""
+    with an allowed nature, for this TID/SID. Returns a dict of numpy arrays:
+    G, pid, nature, iters (nature-loop length), and o1/o2/o3 (the three post-PID
+    RNG outputs — the env-independent ingredients of the VBlank IV model). Cached
+    to `cache_path` (.npz); apply an env's IV threshold cheaply via
+    predict_env_ivs() without re-enumerating."""
     import numpy as np
+    keys = ("G", "pid", "nature", "iters", "o1", "o2", "o3")
     if cache_path and os.path.exists(cache_path):
         d = np.load(cache_path)
-        if verbose:
-            print("Stage1: loaded %d cached candidates from %s" % (len(d["G"]), cache_path), flush=True)
-        return d["G"], d["pid"], d["nature"]
+        if "o3" in d:
+            if verbose:
+                print("Stage1: loaded %d cached candidates from %s" % (len(d["G"]), cache_path), flush=True)
+            return {k: d[k] for k in keys}
+        elif verbose:
+            print("Stage1: cache lacks IV fields; re-enumerating", flush=True)
     NW = workers or os.cpu_count(); span = (1 << 32) // NW
     ranges = [(i * span, (i + 1) * span if i < NW - 1 else (1 << 32), 1 << 22,
                tid, sid, tuple(slots), tuple(allowed_natures)) for i in range(NW)]
@@ -78,16 +93,51 @@ def enumerate_candidates(species, slots, tid, sid, allowed_natures=tuple(range(2
     with ProcessPoolExecutor(NW) as ex:
         for r in ex.map(_enum_range, ranges):
             out.extend(r)
-    G = np.array([o[0] for o in out], dtype=np.uint64)
-    pid = np.array([o[1] for o in out], dtype=np.uint64)
-    nat = np.array([o[2] for o in out], dtype=np.uint8)
+    cols = list(zip(*out)) if out else ([],) * 7
+    arr = {
+        "G": np.array(cols[0], dtype=np.uint64), "pid": np.array(cols[1], dtype=np.uint64),
+        "nature": np.array(cols[2], dtype=np.uint8), "iters": np.array(cols[3], dtype=np.int32),
+        "o1": np.array(cols[4], dtype=np.uint16), "o2": np.array(cols[5], dtype=np.uint16),
+        "o3": np.array(cols[6], dtype=np.uint16),
+    }
     if verbose:
         print("Stage1: enumerated %d candidates in %.1fs" % (len(out), time.time() - t0), flush=True)
     if cache_path:
-        np.savez(cache_path, G=G, pid=pid, nature=nat, species=species, tid=tid, sid=sid)
+        np.savez(cache_path, species=species, tid=tid, sid=sid, **arr)
         if verbose:
             print("Stage1: cached -> %s" % cache_path, flush=True)
-    return G, pid, nat
+    return arr
+
+
+def _unpack_iv(iv1, iv2):
+    return (iv1 & 31, (iv1 >> 5) & 31, (iv1 >> 10) & 31,
+            iv2 & 31, (iv2 >> 5) & 31, (iv2 >> 10) & 31)
+
+
+def predict_env_ivs(cands, band):
+    """Apply an env's IV threshold to cached candidates (offline, no emulation).
+
+    `band` = (lo, hi): nature-loop lengths <lo take iv1=o1, >hi take iv1=o2, and
+    those IN [lo,hi] are ambiguous (sub-frame jitter) so BOTH variants are
+    emitted. iv2 is always o3 (per fixed offset). Returns rows
+    (G, pid, nature, iv_tuple, ambiguous_bool).
+    """
+    lo, hi = band
+    G = cands["G"]; pid = cands["pid"]; nat = cands["nature"]; it = cands["iters"]
+    o1 = cands["o1"]; o2 = cands["o2"]; o3 = cands["o3"]
+    rows = []
+    for i in range(len(G)):
+        Gi = int(G[i]); Pi = int(pid[i]); Ni = int(nat[i]); o3i = int(o3[i])
+        if it[i] < lo:
+            variants = [int(o1[i])]
+        elif it[i] > hi:
+            variants = [int(o2[i])]
+        else:
+            variants = [int(o1[i]), int(o2[i])]
+        amb = len(variants) > 1
+        for iv1 in variants:
+            rows.append((Gi, Pi, Ni, _unpack_iv(iv1, o3i), amb))
+    return rows
 
 
 # ============================== Stage 2: verify env =============================
@@ -152,10 +202,13 @@ def _verify_chunk(args):
 
 def verify_env(candidates, state, offsets, env_id, axis="LR", hold=2, rel=1,
                target_species=None, results_jsonl=None, workers=None, verbose=True):
-    """Stage 2. Reproduce every candidate in ONE timing env (state + jiggle
-    pattern + offsets), reading true IVs. Appends rows to `results_jsonl` tagged
-    with `env_id`. Returns the rows (G, pid, nature, iv, species)."""
-    G, pid, nat = candidates
+    """Stage 2 (validation / legacy mass-verify). Reproduce every candidate in
+    ONE timing env, reading true IVs. `candidates` is the enumerate_candidates
+    dict (or a (G,pid,nature) tuple). Appends rows to `results_jsonl`."""
+    if isinstance(candidates, dict):
+        G, pid, nat = candidates["G"], candidates["pid"], candidates["nature"]
+    else:
+        G, pid, nat = candidates
     NW = workers or os.cpu_count()
     cand = list(zip(G.tolist(), pid.tolist(), nat.tolist()))
     sl = [cand[i::NW] for i in range(NW)]
@@ -172,6 +225,30 @@ def verify_env(candidates, state, offsets, env_id, axis="LR", hold=2, rel=1,
                 f.write(json.dumps({"env": env_id, "G": G_, "pid": P, "nature": nat_,
                                     "iv": iv, "species": sp}) + "\n")
     return rows
+
+
+def confirm_candidates(ranked_rows, state, offsets, axis="LR", hold=2, rel=1,
+                       target_species=None, k=30, verbose=True):
+    """Emulate the top-`k` ranked (predicted) candidates in one env to read their
+    TRUE IVs — resolves the ambiguous-band predictions and guarantees an exact
+    result. `ranked_rows` are best-first (G, pid, nature, pred_iv, amb); returns
+    confirmed (G, pid, nature, true_iv, species) for those that reproduce."""
+    from pokemon_agent.shiny_gen3 import rewind
+    B = _bundle(state); seen = set(); confirmed = []; tried = 0; t0 = time.time()
+    for G, P, nat, _pred, _amb in ranked_rows:
+        if G in seen:
+            continue
+        seen.add(G); tried += 1
+        if tried > k:
+            break
+        for off in offsets:
+            res = _emulate(B, rewind(int(G), off), axis, hold, rel)
+            if res and res[0] == P and (target_species is None or res[2] == target_species):
+                confirmed.append((int(G), int(P), int(nat), tuple(res[1]), res[2])); break
+    if verbose:
+        print("confirm: %d/%d top candidates reproduced in %.1fs"
+              % (len(confirmed), min(tried, k), time.time() - t0), flush=True)
+    return confirmed
 
 
 # ============================== Stage 3: select ================================

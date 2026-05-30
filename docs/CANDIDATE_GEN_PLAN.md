@@ -97,17 +97,32 @@ Per-species scripts become thin configs over `shiny_grass_core.py`.
 - [x] **3. Multi-env Nidoran♂ run** — 4 envs (offsets 59/39/29/19) → ~100%
   physical-viable coverage. **Found a better dual-31: Lonely 27/31/14/31/23/16**
   (vs the frail Adamant 11/31/6/31/10/10). Awaiting user pick.
-- [~] **4. (PROMOTED from stretch) Deterministic IV model** — PARTIAL.
-  `gba_iv_model.py` + `gba_iv_model2.py` (assumption-free chain search): when the
-  IV word IS on the written gRngValue chain, the gap is **always exactly 1**
-  (PID_end+1) — that ~44% of seeds is **fully offline-predictable**. But **~56%
-  have the IV word OFF the gRngValue chain entirely** (PID found, IVs absent in
-  3000 calls) ⇒ a reseed / different RNG source. Black-box probing can't resolve
-  the off-chain half. NEXT (bigger lift): trace `CreateMonWithNature`'s IV RNG
-  source in pret/pokefirered and/or hook the emulator's RNG reads directly. A
-  HYBRID offline predictor (certain for the gap-1 ~44%, verify the rest) is
-  already buildable and would speed up + partially exact-ify future hunts.
-- [ ] **5. Cleanup** — port/retire old scripts, fix tmp artifacts, commit.
+- [x] **4. (PROMOTED from stretch) Deterministic IV model** — DONE & validated.
+  **Mechanism (disassembly + measurement):** `src/main.c VBlankIntr()` calls
+  `Random()` once per frame; `CreateBoxMon` reads `iv1=Random(); iv2=Random()`
+  right after the PID loop (nothing between). With o1,o2,o3 = the 3 post-PID RNG
+  outputs: **iv2 = o3** (env-independent — `gba_iv_struct.py`: 92/92 at offset 59);
+  **iv1 = o1 if loop<T else o2**, T per-offset, with a ~3-loop ambiguous band
+  (sub-frame φ0 jitter). So each candidate has exactly TWO possible IV sets, both
+  offline-computable from G (iv2 fixed). Tools: `gba_iv_model3.py` (g1/g2 anchored
+  search), `gba_iv_struct.py` (per-env threshold calib), `validate_iv_prediction.py`
+  (held-out check). Model lives in `pokemon_agent/gen3_rng.py` (`wild_outcome`,
+  `wild_outcome_both`, `calibrate_iv_threshold`). Integrated into
+  `shiny_grass_core.py` (Stage1 caches G,pid,nature,iters,o1,o2,o3 +
+  `predict_env_ivs` + `confirm_candidates`). **End-to-end offline Nidoran♂ hunt:
+  enumerate+predict 31.5s, confirm top-80 in 5.4s, total 37s; every prediction
+  matched emulator confirmation EXACTLY.** Result is always exact (top-K confirmed).
+  NOTE the (faster) chain-analyzers replaced the planned single-step tracer — they
+  yielded the mechanism + constants without slow stepping.
+  **Realization-coverage knob:** offline ranking now reveals the true ceiling (a
+  Jolly 29/31/30/31/25/3 surfaced) but delivering a specific candidate still needs
+  an env whose offset reproduces it — add envs (offset diversity) to realize the
+  absolute-ceiling variant.
+  (Earlier "off-chain 56%" was a red herring: it was the VBlank `Random()` landing
+  between iv1 and iv2, which the old *consecutive* search in `gba_iv_model2.py`
+  couldn't see — never a reseed.)
+- [ ] **5. Cleanup** — port Spearow hunt to offline IVs; add per-env band to the
+  manifest + more envs to realize the ceiling variant; retire old probes; commit.
 
 ## Decisions / findings log
 
