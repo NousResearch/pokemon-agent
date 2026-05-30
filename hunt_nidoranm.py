@@ -6,10 +6,8 @@ boundary candidates and one reproduction of the winner. See hunt_hybrid.py.
 
     distrobox enter devbox -- .venv-gba/bin/python hunt_nidoranm.py
 """
-from hunt_hybrid import run_hybrid_hunt
+from hunt_hybrid import run_unified_hunt
 from pokemon_agent.wild_enumerate import n31
-
-STATE = "roms/leafgreen_route3_grass.ss1"
 
 
 def phys_viable(nat):
@@ -24,6 +22,6 @@ def metric(iv, nat):
 
 
 if __name__ == "__main__":
-    run_hybrid_hunt(32, (10,), STATE, metric, phys_viable,
-                    "cache_nidoranm.npz", "roms/leafgreen_shiny_nidoranm.ss1",
-                    label="Nidoran-male")
+    run_unified_hunt(32, (10,), metric, phys_viable,
+                     "cache_nidoranm.npz", "roms/leafgreen_shiny_nidoranm.ss1",
+                     label="Nidoran-male")

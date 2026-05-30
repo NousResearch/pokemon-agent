@@ -141,7 +141,23 @@ math-ceiling Jolly 29/31/30/31/25/3 is **un-realizable** (loop 15 < T-floor ~18)
 Mild 27/31/31/30/13/29 is the bulkiest alternative (Def31/SpD29, Spe 1 off). The
 realizable ceiling = the delivered mon; no env coverage beats it.
 
-## Offline-strategy integrated into hunts — KEY LIMITATION (2026-05-30)
+## UNIFIED hunt — one tool for high- AND low-rate species (2026-05-30)
+
+`hunt_hybrid.run_unified_hunt` is the single interface (both `hunt_nidoranm.py`
+and `shiny_grass_spearow.py` call it). It (1) RANKS the whole space offline by
+each candidate's **best-possible** IV over its offset-variants
+(`wild_enumerate.best_possible_iv`; iv1∈{o1,o2}, iv2∈{o2,o3,o4}) — no mass
+emulation; then (2) REALIZES the top-N across a set of `(state,pattern,offset)`
+combos (reads TRUE IVs), which resolves the seed-dependent / non-offline-knowable
+trigger offset, so it finds the GLOBAL best whether good candidates fire at the
+dominant offset (high-rate) or scatter (low-rate). Verified: **Spearow → Hasty
+31/31/17/31/19/31 4×31; Nidoran → Lonely 27/31/14/31/23/16 (recovered, was missed
+by the single-offset hybrid)**. ~0.4s offline rank + ~30s realize top-120. Tests:
+`tests/integration/test_unified_hunt.py` (low-rate Atk31), unit `best_possible_iv`.
+(The single-offset `predict_env_exact` / hybrid stays for fixed-offset prediction
+and the Sweet Scent path.)
+
+## Offline-strategy first attempt — single-offset LIMITATION (2026-05-30)
 
 `hunt_nidoranm.py`/`shiny_grass_spearow.py` now call `hunt_hybrid.run_hybrid_hunt`
 (enumerate → calibrate_env → predict_env_exact → confirm only boundary). **~91.5%

@@ -7,10 +7,8 @@ boundary candidates and one reproduction of the winner. Spearow is slots 0/2/6
 
     distrobox enter devbox -- .venv-gba/bin/python shiny_grass_spearow.py
 """
-from hunt_hybrid import run_hybrid_hunt
+from hunt_hybrid import run_unified_hunt
 from pokemon_agent.wild_enumerate import n31
-
-STATE = "roms/leafgreen_route3_grass.ss1"
 
 
 def phys_viable(nat):
@@ -25,6 +23,6 @@ def metric(iv, nat):
 
 
 if __name__ == "__main__":
-    run_hybrid_hunt(21, (0, 2, 6), STATE, metric, phys_viable,
-                    "cache_spearow.npz", "roms/leafgreen_shiny_spearow.ss1",
-                    label="Spearow")
+    run_unified_hunt(21, (0, 2, 6), metric, phys_viable,
+                     "cache_spearow.npz", "roms/leafgreen_shiny_spearow.ss1",
+                     label="Spearow")

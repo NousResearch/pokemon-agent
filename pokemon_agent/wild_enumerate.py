@@ -199,6 +199,16 @@ def predict_env_exact(cands, ta, tb_lo, tb_hi, ambig_ranges=()):
     return rows
 
 
+def best_possible_iv(o1, o2, o3, o4, nat, metric):
+    """The best IV a candidate can realize over its offset-variants (iv1 in
+    {o1,o2}, iv2 in {o2,o3,o4} — the seed-dependent trigger offset picks which).
+    Used to RANK candidates fully offline before the realize/confirm step that
+    reads the actual one. `metric(iv, nature) -> sortkey` (higher = better)."""
+    variants = (_unpack_iv(o1, o3), _unpack_iv(o2, o3),
+                _unpack_iv(o2, o4), _unpack_iv(o1, o2))
+    return max(variants, key=lambda iv: metric(iv, nat))
+
+
 # ------------------------------- Stage 3: select -------------------------------
 
 def load_results(results_jsonl):
