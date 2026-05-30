@@ -97,11 +97,16 @@ Per-species scripts become thin configs over `shiny_grass_core.py`.
 - [x] **3. Multi-env Nidoran♂ run** — 4 envs (offsets 59/39/29/19) → ~100%
   physical-viable coverage. **Found a better dual-31: Lonely 27/31/14/31/23/16**
   (vs the frail Adamant 11/31/6/31/10/10). Awaiting user pick.
-- [ ] **4. (PROMOTED from stretch) Deterministic IV model** — now the headline
-  unlock (IVs are deterministic). Instrument the real `Random()` calls during
-  generation to find the true `iv1/iv2` read offset (probe searched only gap
-  0–15; true offset is larger/structural). Then enumerate the exact global best
-  offline, instantly, no verify.
+- [~] **4. (PROMOTED from stretch) Deterministic IV model** — PARTIAL.
+  `gba_iv_model.py` + `gba_iv_model2.py` (assumption-free chain search): when the
+  IV word IS on the written gRngValue chain, the gap is **always exactly 1**
+  (PID_end+1) — that ~44% of seeds is **fully offline-predictable**. But **~56%
+  have the IV word OFF the gRngValue chain entirely** (PID found, IVs absent in
+  3000 calls) ⇒ a reseed / different RNG source. Black-box probing can't resolve
+  the off-chain half. NEXT (bigger lift): trace `CreateMonWithNature`'s IV RNG
+  source in pret/pokefirered and/or hook the emulator's RNG reads directly. A
+  HYBRID offline predictor (certain for the gap-1 ~44%, verify the rest) is
+  already buildable and would speed up + partially exact-ify future hunts.
 - [ ] **5. Cleanup** — port/retire old scripts, fix tmp artifacts, commit.
 
 ## Decisions / findings log
