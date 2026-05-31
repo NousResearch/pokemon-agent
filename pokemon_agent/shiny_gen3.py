@@ -186,6 +186,13 @@ def rewind(seed: int, n: int) -> int:
     return seed
 
 
+def advance(seed: int, n: int) -> int:
+    """Step the LCG forwards ``n`` times (inverse of :func:`rewind`)."""
+    for _ in range(n):
+        seed = lcg_next(seed)
+    return seed
+
+
 def gen_method1(seed: int) -> tuple[int, Gen3IVs]:
     """Generate (PID, IVs) by Gen 3 **Method 1** starting from ``seed``.
 

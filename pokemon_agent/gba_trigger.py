@@ -79,6 +79,71 @@ def jiggle_trigger(B, V, axis="LR", hold=2, rel=1, cap=70, settle=20):
 _emulate = jiggle_trigger
 
 
+def _calls_between(a, b, cap=900):
+    """LCG steps from a to b along the clean RNG chain, or None if not within cap."""
+    from pokemon_agent.shiny_gen3 import lcg_next
+    s = a
+    for n in range(cap):
+        if s == b:
+            return n
+        s = lcg_next(s)
+    return None
+
+
+def measure_offset(B, V, axis="LR", hold=2, rel=1, cap=70, settle=20, rmax=400):
+    """Run the SAME jiggle trigger as ``jiggle_trigger`` but also MEASURE the
+    realized generation offset R (the number of clean RNG calls consumed from the
+    written seed V before the encounter is generated). This is the offset the
+    encounter ACTUALLY fired at — not a guess.
+
+    Method: count clean-chain LCG steps between consecutive frames; when a frame's
+    step-count jumps (>5, the generation burst) we have the accumulated offset N at
+    the start of that frame, then a small forward d-search pins the exact R = N+d
+    where ``generate_wild(advance(V, R)).pid`` equals the wild mon's pid.
+
+    Returns (pid, iv_tuple, species, R, gen_seed) or None. gen_seed == advance(V,R)
+    is the seed the encounter was generated from; it equals the target candidate G
+    iff R landed on the written offset."""
+    from pokemon_agent.gen3_rng import generate_wild
+    from pokemon_agent.shiny_gen3 import advance
+    core = B["core"]; mem = B["mem"]
+    core.load_raw_state(B["base"]); mem.u32[RNG] = V & 0xFFFFFFFF; bp = mem.u32[ENEMY]
+    k1, k2 = (B["L"], B["R"]) if axis == "LR" else (B["U"], B["D"])
+    prev = mem.u32[RNG]; total = 0; N = None; i = 0; hit = False
+    while i < cap and not hit:
+        btn = k1 if i % 2 == 0 else k2
+        for ph in range(hold + rel):
+            core.set_keys(btn) if ph < hold else core.set_keys(); core.run_frame()
+            cur = mem.u32[RNG]
+            if mem.u32[ENEMY] != bp:
+                hit = True
+                if N is None:  # generation burst this frame; N = offset at frame start
+                    N = total
+                break
+            c = _calls_between(prev, cur); prev = cur
+            if c is not None and c <= 5:
+                total += c
+        i += 1
+    if not hit or N is None:
+        return None
+    for _ in range(settle):
+        core.run_frame()
+    enemy = _read_enemy(mem)
+    if enemy is None:
+        return None
+    pid, iv, sp = enemy
+    # Pin the exact offset around the frame-start estimate N (the burst may begin a
+    # few clean calls into the frame). Search a small forward window first, then a
+    # wider one bounded by rmax, matching on the full 32-bit pid (collision ~2^-32).
+    for r in range(max(0, N - 4), min(rmax, N + 16)):
+        if generate_wild(advance(V, r)).pid == pid:
+            return pid, iv, sp, r, advance(V, r)
+    for r in range(0, rmax):
+        if generate_wild(advance(V, r)).pid == pid:
+            return pid, iv, sp, r, advance(V, r)
+    return None
+
+
 def fixed_trigger(B, V, step_frames=16, cap_frames=600, settle=20):
     """Deterministic fixed-phase trigger (Route B): write V, then take identical
     back-and-forth full steps (down/up, ``step_frames`` each) until an encounter
@@ -104,6 +169,55 @@ def fixed_trigger(B, V, step_frames=16, cap_frames=600, settle=20):
     for _ in range(settle):
         core.run_frame()
     return _read_enemy(mem)
+
+
+def _probe_order(off0, lattice=10, depth=7, jitter=2, window=0):
+    """Offsets to try, best-first, for reproducing at dominant offset ``off0``.
+
+    The reproducible offsets (where writing ``rewind(G,o)`` makes the encounter
+    generate from exactly ``G``) sit on a lattice spaced ~``lattice`` apart AT and
+    BELOW ``off0`` — the per-step RNG-call count. Probe ``off0`` then ``off0-10k``
+    with +/-``jitter``, then optionally a dense downward fill of ``window`` as a
+    last resort for off-lattice fixed points."""
+    order = []
+    for k in range(depth + 1):
+        base = off0 - lattice * k
+        for j in range(0, jitter + 1):
+            for o in ((base,) if j == 0 else (base + j, base - j)):
+                if o >= 0 and o not in order:
+                    order.append(o)
+    for o in range(off0, off0 - window - 1, -1):
+        if o >= 0 and o not in order:
+            order.append(o)
+    return order
+
+
+def reproduce(B, G, pid, species, axis="LR", hold=2, rel=1, off0=71,
+              cap=140, settle=20, rmax=400, lattice=10, depth=7, jitter=2, window=0):
+    """Reproduce a specific generation-seed ``G`` at this state and read its TRUE
+    IVs — encounter-type-agnostic (grass offset ~71, cave/Mt. Moon ~240, …).
+
+    Instead of *guessing* a trigger offset and hoping the encounter fires there, we
+    look for the offset ``o`` at which writing ``rewind(G, o)`` makes the encounter
+    generate from exactly ``G``. Writing ``rewind(G, o)`` generates from
+    ``advance(G, R(o)-o)`` where ``R(o)`` is the MEASURED realized offset
+    (:func:`measure_offset`); it equals ``G`` iff ``R(o) == o``. The realized offset
+    is dominated by a flat attractor (writes mostly fire at ``off0``) with the true
+    fixed points sitting on a ~``lattice``-spaced grid at/below ``off0`` (one per
+    overworld step). So we probe that lattice (see :func:`_probe_order`) and accept
+    the first offset whose generated seed is exactly ``G`` — verified by 32-bit
+    gen-seed equality + pid + species, so there are no false positives.
+
+    Returns (pid, iv_tuple, species, R) for the encounter generated from ``G``, or
+    None if no reproducing offset is found (the candidate isn't realizable here)."""
+    from pokemon_agent.shiny_gen3 import rewind
+    Gi = int(G)
+    for o in _probe_order(off0, lattice=lattice, depth=depth, jitter=jitter, window=window):
+        r = measure_offset(B, rewind(Gi, o), axis, hold, rel,
+                           cap=cap, settle=settle, rmax=rmax)
+        if r and r[4] == Gi and r[0] == pid and (species is None or r[2] == species):
+            return r[0], r[1], r[2], r[3]   # pid, iv, sp, R  (gen_seed == G)
+    return None
 
 
 def _verify_chunk(args):
