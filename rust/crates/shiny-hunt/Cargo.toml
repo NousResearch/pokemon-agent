@@ -1,0 +1,15 @@
+[package]
+name = "shiny-hunt"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "CLI driver: enumerate / rank / reproduce shiny Gen-3 wild encounters (LeafGreen)"
+
+[[bin]]
+name = "shiny-hunt"
+path = "src/main.rs"
+
+[dependencies]
+pokemon-rng = { path = "../pokemon-rng" }
+pokemon-emu = { path = "../pokemon-emu" }
+clap = { version = "4", features = ["derive"] }

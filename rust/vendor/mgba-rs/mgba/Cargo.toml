@@ -1,0 +1,13 @@
+[package]
+name = "mgba"
+version = "0.1.0"
+edition = "2021"
+license = "MIT AND MPL-2.0"
+description = "Safe Rust wrapper around libmgba for GBA emulation"
+repository = "https://github.com/ocnc/mgba-rs"
+keywords = ["gba", "emulation", "gameboy-advance", "mgba"]
+categories = ["emulators", "game-engines"]
+readme = "README.md"
+
+[dependencies]
+mgba-sys = { path = "../mgba-sys", version = "0.1.0" }

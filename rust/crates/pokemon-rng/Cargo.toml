@@ -1,0 +1,13 @@
+[package]
+name = "pokemon-rng"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Pure Gen-3 (FR/LG) RNG, IV/PID decode, wild-encounter generation and shiny enumeration"
+
+[dependencies]
+rayon = "1.10"
+ndarray = "0.16"
+ndarray-npy = { version = "0.9", default-features = false, features = ["npz", "compressed_npz"] }
+
+[dev-dependencies]

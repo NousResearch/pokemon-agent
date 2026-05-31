@@ -1,0 +1,5 @@
+# libmgba is linked dynamically; embed an rpath of $ORIGIN so the binary and the
+# test executables find libmgba.so placed next to them (see the build helper that
+# copies it into target/<profile>/ and .../deps/).
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-Wl,-rpath,$ORIGIN", "-C", "link-arg=-Wl,-rpath,$ORIGIN/../"]

@@ -1,5 +1,9 @@
 # GBA (Pokémon LeafGreen / FireRed) emulation setup
 
+> **The LeafGreen shiny-hunting pipeline is now Rust** — see [`rust/README.md`](../rust/README.md).
+> It builds libmgba directly (via the vendored `mgba-rs`), so the PyGBA/cffi setup
+> below is only needed for the remaining Python utilities (e.g. `play_gba.py`).
+
 The Game Boy / GBC shiny scripts use **PyBoy**. GBA games (Gen 3 — LeafGreen,
 FireRed, Ruby/Sapphire/Emerald) need a different emulator: **mGBA** via its
 Python (cffi) bindings, wrapped by **PyGBA**.

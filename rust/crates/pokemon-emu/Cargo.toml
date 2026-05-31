@@ -1,0 +1,12 @@
+[package]
+name = "pokemon-emu"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "libmgba-backed emulator layer: encounter trigger, measure-offset, reproduce"
+
+[dependencies]
+pokemon-rng = { path = "../pokemon-rng" }
+# mgba re-exports mgba_sys; depend only on mgba so a single mgba-sys unit is built.
+mgba = { path = "../../vendor/mgba-rs/mgba" }
+libc = "0.2"

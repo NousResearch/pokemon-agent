@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["crates/pokemon-rng", "crates/pokemon-emu", "crates/shiny-hunt"]
+# Bare `cargo build` only builds the pure crate (host-friendly); pokemon-emu needs
+# the devbox (libmgba/cmake/clang) and is built explicitly with `-p pokemon-emu`.
+default-members = ["crates/pokemon-rng"]
+# vendor/mgba-rs is its own workspace; pokemon-emu depends on it by path.
+exclude = ["vendor/mgba-rs"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+
+[profile.release]
+opt-level = 3
+# LTO left off: thin-LTO + rust-lld prunes libmgba C symbols referenced only from
+# Rust (e.g. mCoreSaveStateNamed). The hot path is opt-level=3 already.
+lto = false

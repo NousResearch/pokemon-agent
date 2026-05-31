@@ -1,0 +1,11 @@
+#include <mgba/core/core.h>
+#include <mgba/core/interface.h>
+#include <mgba/core/config.h>
+#include <mgba/core/log.h>
+#include <mgba/core/serialize.h>
+#include <mgba/core/version.h>
+#include <mgba/gba/core.h>
+#include <mgba/gba/interface.h>
+#include <mgba/internal/gba/input.h>
+#include <mgba-util/vfs.h>
+#include <mgba-util/audio-buffer.h>
