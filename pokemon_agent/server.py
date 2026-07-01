@@ -603,6 +603,14 @@ async def new_game(req: NewGameRequest):
     try:
         from pokemon_agent.emulator import create_emulator
         global _emulator, _reader
+        # Shut down the old emulator before replacing it, otherwise the
+        # previous PyBoy instance leaks on every "New Game" (its stop() is
+        # never called and nothing else holds the reference).
+        if _emulator is not None:
+            try:
+                await _run_sync(_emulator.close)
+            except Exception:
+                pass
         _emulator = await _run_sync(create_emulator, _config.rom_path)
         if _config.game_type == "red":
             from pokemon_agent.memory.red import PokemonRedReader
