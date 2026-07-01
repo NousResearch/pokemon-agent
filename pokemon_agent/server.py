@@ -250,10 +250,15 @@ async def _execute_action(action_str: str) -> None:
         for _ in range(10):  # max 300 frames = 10 * 30
             await _run_sync(_emulator.press, "a")
             await _run_sync(_emulator.tick, 30)
-            # Check dialog flag via reader if available
+            # Check dialog flag via reader if available.
+            # Dialog state is nested as state["dialog"]["active"] (see
+            # read_dialog / the state builder, and the same access pattern in
+            # autopilot.py and dashboard/history.py). The old top-level
+            # "dialog_active" key never existed, so the lookup always returned
+            # the default False and the loop broke after a single A press.
             try:
                 state = _get_state_dict()
-                if not state.get("dialog_active", False):
+                if not (state.get("dialog") or {}).get("active", False):
                     break
             except Exception:
                 pass
