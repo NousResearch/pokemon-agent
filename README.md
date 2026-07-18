@@ -39,11 +39,27 @@ Let any AI agent — [Hermes Agent](https://github.com/NousResearch/hermes-agent
 ### Installation
 
 ```bash
-# Core (emulator + API server)
-pip install pokemon-agent pyboy
+# Clone the repository, then run these commands from the project directory.
 
-# With dashboard (optional web GUI)
-pip install pokemon-agent[dashboard] pyboy
+# Core installation with the PyBoy emulator
+python -m pip install --upgrade pip
+python -m pip install ".[pyboy]"
+
+# With the optional web dashboard
+python -m pip install ".[pyboy,dashboard]"
+```
+
+#### Windows PowerShell
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+python -m pip install --upgrade pip
+python -m pip install ".[pyboy,dashboard]"
+
+pip check
+pokemon-agent --help
 ```
 
 > **Note:** You must provide your own ROM file. This package does not include any game ROMs.
