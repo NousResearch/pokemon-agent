@@ -21,8 +21,11 @@ package to run a game server, then interacts via HTTP API.
 ## Setup (First Time Only)
 
 ```bash
-# Install the package + emulator + dashboard
-pip install pokemon-agent[dashboard] pyboy
+# Option 1: Install from GitHub directly
+pip install "git+https://github.com/NousResearch/pokemon-agent.git#egg=pokemon-agent[dashboard,pyboy]"
+
+# Option 2: Clone and install locally
+# git clone https://github.com/NousResearch/pokemon-agent.git && cd pokemon-agent && pip install -e ".[all]"
 
 # User must provide their own ROM file
 # The agent CANNOT download or distribute ROMs
