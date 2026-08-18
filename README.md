@@ -39,14 +39,17 @@ Let any AI agent — [Hermes Agent](https://github.com/NousResearch/hermes-agent
 ### Installation
 
 ```bash
-# Core (emulator + API server)
-pip install pokemon-agent pyboy
+# Option 1: Install directly from GitHub repository
+pip install "git+https://github.com/NousResearch/pokemon-agent.git#egg=pokemon-agent[pyboy,dashboard]"
 
-# With dashboard (optional web GUI)
-pip install pokemon-agent[dashboard] pyboy
+# Option 2: Clone and install in editable mode
+git clone https://github.com/NousResearch/pokemon-agent.git
+cd pokemon-agent
+pip install -e ".[all]"
 ```
 
 > **Note:** You must provide your own ROM file. This package does not include any game ROMs.
+> For headless emulation with PyBoy on Windows, `pip install pysdl2-dll` is also recommended.
 
 ### Start the Server
 
