@@ -9,16 +9,23 @@ import asyncio
 import base64
 import io
 import json
+import logging
+import os
 import re
 import time
 from functools import partial
 from pathlib import Path
-from typing import Optional, Set
+from typing import List, Optional, Set
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
+
+# Module logger. The package had no logging at all, so the WebSocket handler's
+# `except Exception: pass` had nowhere to report to even in principle.
+logger = logging.getLogger(__name__)
 
 __version__ = "0.1.0"
 
@@ -126,14 +133,91 @@ app = FastAPI(
     description="HTTP + WebSocket API for Pokemon emulator control",
 )
 
-# CORS — allow everything for local dev
+# ---------------------------------------------------------------------------
+# Browser origin policy
+# ---------------------------------------------------------------------------
+#
+# The dashboard is served by this same process, so it needs no cross-origin
+# permission at all. The previous configuration was
+# `allow_origins=["*"] + allow_credentials=True`, which is the one CORS
+# combination that must never be used together: Starlette's CORSMiddleware
+# cannot answer a credentialed request with a literal `*`, so it reflects the
+# caller's own Origin header back and adds
+# `Access-Control-Allow-Credentials: true`. Every origin therefore becomes an
+# allowed origin. Any page the operator visited could read /state, drive the
+# emulator through POST /action, and delete sessions through
+# DELETE /games/{id} — none of which require authentication.
+#
+# The default allowlist below covers the loopback origins the dashboard is
+# actually opened from. Add more with POKEMON_ALLOWED_ORIGINS (comma-separated).
+
+_DEFAULT_ALLOWED_ORIGINS = [
+    "http://localhost:8765",
+    "http://127.0.0.1:8765",
+    "http://[::1]:8765",
+]
+
+
+def _parse_allowed_origins() -> List[str]:
+    """Build the browser origin allowlist from the environment.
+
+    POKEMON_ALLOWED_ORIGINS is a comma-separated list of full origins
+    (scheme://host[:port]). The literal "*" is accepted but deliberately turns
+    credentialed CORS off, because "any origin" and "send cookies" cannot both
+    hold without making every site a trusted site.
+    """
+    raw = os.environ.get("POKEMON_ALLOWED_ORIGINS", "").strip()
+    if not raw:
+        return list(_DEFAULT_ALLOWED_ORIGINS)
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    return origins or list(_DEFAULT_ALLOWED_ORIGINS)
+
+
+_allowed_origins = _parse_allowed_origins()
+_allow_any_origin = "*" in _allowed_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_allowed_origins,
+    # Credentials are only offered to a finite, named set of origins. With "*"
+    # this is forced off so the middleware cannot fall back to reflecting the
+    # caller's Origin.
+    allow_credentials=not _allow_any_origin,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _origin_allowed(origin: Optional[str]) -> bool:
+    """Decide whether a WebSocket handshake Origin may connect.
+
+    CORS middleware does not apply to WebSockets: the browser sends no preflight
+    and does not enforce the response headers, so `/ws` was reachable from any
+    page the operator had open (cross-site WebSocket hijacking). The stream
+    carries agent reasoning, game state and the replay buffer, so the Origin has
+    to be checked here, during the handshake, before accept().
+
+    A missing Origin header is allowed: non-browser clients (the CLI, curl,
+    tests) do not send one, and they are not subject to the ambient-authority
+    problem that makes browser origins dangerous.
+    """
+    if origin is None:
+        return True
+    if _allow_any_origin:
+        return True
+    if origin in _allowed_origins:
+        return True
+    # Compare on the normalised origin triple as well, so "http://host:80" and
+    # a trailing slash do not cause a spurious mismatch.
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return False
+    normalised = f"{parsed.scheme}://{parsed.netloc}".lower()
+    return any(
+        normalised == f"{urlsplit(a).scheme}://{urlsplit(a).netloc}".lower()
+        for a in _allowed_origins
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -847,6 +931,15 @@ async def minimap():
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     """Live event stream via WebSocket."""
+    # Reject disallowed browser origins during the handshake, before accept().
+    # 1008 (policy violation) is the correct close code here; closing without
+    # accepting makes the browser see a failed handshake rather than an open
+    # socket that is silently useless.
+    origin = ws.headers.get("origin")
+    if not _origin_allowed(origin):
+        await ws.close(code=1008, reason="Origin not allowed")
+        return
+
     await ws.accept()
     _ws_clients.add(ws)
     try:
@@ -875,8 +968,15 @@ async def websocket_endpoint(ws: WebSocket):
                 await ws.send_json({"type": "pong"})
     except WebSocketDisconnect:
         pass
+    except asyncio.CancelledError:
+        # Never swallow cancellation: re-raise so shutdown and client
+        # disconnects propagate instead of being treated as a handled error.
+        raise
     except Exception:
-        pass
+        # `except Exception: pass` used to hide every genuine bug in this
+        # handler — a serialisation failure in the replay buffer, for example,
+        # closed the stream with no trace anywhere. Log it and still clean up.
+        logger.exception("WebSocket handler failed for client %s", ws.client)
     finally:
         _ws_clients.discard(ws)
 
